@@ -84,6 +84,13 @@ class Robot:
             result.append(temp)
         return result
 
+    def posed_single_mesh(self):
+        meshes = self.posed_meshes()
+        mesh = meshes[0]
+        for m in meshes[1:]:
+            mesh.append(m)
+        return mesh
+
     @staticmethod
     def crx5ia():
         return Robot(410, 430, 145, 130, "crx5ia")
