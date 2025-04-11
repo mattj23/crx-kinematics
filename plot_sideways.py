@@ -4,7 +4,7 @@
 
 import numpy
 from engeom.geom3 import Iso3, Point3, Vector3
-from engeom.geom2 import Circle2, Aabb2
+from engeom.geom2 import Circle2, Aabb2, Point2
 from engeom.plot import MatplotlibAxesHelper, TraceBuilder, PyvistaPlotterHelper
 from matplotlib.pyplot import figure, Figure, Axes
 from display_forward import upper_lower, corner_xy
@@ -26,7 +26,7 @@ def main():
     # There are some things we can set up that we know about the robot
     # ========================================================================
     # The expected hypotenuse of the O3-O4-O5 triangle
-    expected_len = numpy.sqrt(robot.y1**2 + robot.x1**2)
+    expected_len = numpy.sqrt(robot.y1 ** 2 + robot.x1 ** 2)
 
     # O4 candidates
     # ========================================================================
@@ -51,13 +51,64 @@ def main():
     view = Iso3(matrix).inverse()
     view_points = view.transform_points(o4_points)
 
-    c0 = Circle2(0, 0, robot.x1)
-    c1 = Circle2(x_v.norm(), 0, robot.z1)
-
     fig: Figure = figure(figsize=(8, 6))
     ax: Axes = fig.subplots()
     helper = MatplotlibAxesHelper(ax)
 
+    # Plot the robot
+    plot_line_robot(ax, robot, view)
+
+    # Plot the O4 candidate circle
+    ax.plot(view_points[:, 0], view_points[:, 1], color="red", linewidth=0.75, linestyle="--")
+
+    # Compute the O1, O4, and O5 origins
+    o1 = view @ robot.frame_origin(1)
+    o4 = view @ robot.frame_origin(3)
+    o5 = view @ robot.frame_origin(4)
+
+    # Compute the circles
+    c3 = Circle2(0, 0, robot.x1)
+    c2 = Circle2(o1.x, 0, robot.z1)
+
+    text_props = dict(ha="center", va="center", fontsize=14)
+    arrow_props = dict(fontsize=10, linewidth=0.75, arrow="<->")
+
+    helper.text("$O_4$", o4, shift=(-30, -30), **text_props)
+    helper.text("$O_1$", o1, shift=(30, -30), **text_props)
+    helper.text("$O_5$", o5, shift=(0, 30), color="red", **text_props)
+    helper.labeled_arrow(o4, o1, "$d$", shift=(0, -30), **arrow_props)
+
+    # Plot the arm and forearm radii
+    helper.plot_circle(c3, fill=False, linewidth=0.75, edgecolor="black", linestyle="--", in_layout=False)
+    helper.plot_circle(c2, fill=False, linewidth=0.75, edgecolor="black", linestyle="--", in_layout=False)
+    helper.labeled_arrow(o1, c2.point_at_angle(numpy.radians(-110)), "$r_2$", shift=(25, 0), **arrow_props)
+    helper.labeled_arrow(o4, c3.point_at_angle(numpy.radians(-60)), "$r_3$",  shift=(-25, 0), **arrow_props)
+
+    # Find a and h to identify O3
+    a = (o1.x ** 2 + c3.r ** 2 - c2.r ** 2) / (2 * o1.x)
+    h = numpy.sqrt(c3.r ** 2 - a ** 2)
+    o3 = Point2(a, h)
+
+    # Plot the a and h distances
+    helper.labeled_arrow((a, 0), o3, "$h$", shift=(20, 10), **arrow_props)
+    helper.labeled_arrow((0, 20), (a, 20), "$a$", shift=(0, 10), **arrow_props)
+
+    # Plot all origin points
+    helper.text("$O_3$", (a, h), shift=(30, 0), **text_props)
+    helper.points(o1, o4, o3, color="black")
+    helper.points(o5, color="red")
+
+    # Plot the error distance
+    helper.labeled_arrow(o5, o3, "$e$", shift=(-15, 15), color="red", linestyle="--", **arrow_props)
+
+    box = Aabb2(0, -200, c2.x, 200).expand(200)
+    helper.set_bounds(box)
+    fig.tight_layout()
+    fig.show()
+    fig.savefig("images/o3-plane.png", dpi=150)
+
+
+def plot_line_robot(ax: Axes, robot: Robot, view: Iso3):
     mesh = robot.posed_single_mesh()
     mesh.transform_by(view)
     visible = TraceBuilder()
@@ -68,26 +119,6 @@ def main():
         if edge_type == 0:
             visible.add_segment(p0, p1)
     ax.plot(*visible.xy, color="black", linewidth=0.5, alpha=0.25)
-
-    ax.plot(view_points[:, 0], view_points[:, 1], color="red", linewidth=0.75, linestyle="--")
-
-    o5 = view @ robot.frame_origin(4)
-    ax.plot([0, x_v.norm(), o5.x], [0, 0, o5.y], "x", color="black", markersize=7)
-    helper.annotate_text_only("$O_4$", (0, -50), color="black", horizontalalignment="center", fontsize=14)
-    helper.annotate_text_only("$O_1$", (x_v.norm(), -50), color="black", horizontalalignment="center", fontsize=14)
-    helper.annotate_text_only("$O_5$", (o5.x, o5.y + 30), color="black", horizontalalignment="center", fontsize=14)
-    ax.annotate("", xy=(x_v.norm(), 0), xytext=(0, 0), arrowprops=dict(arrowstyle="->", color="black"))
-    # ax.annotate("", xy=(o5.x, o5.y), xytext=(0, 0), arrowprops=dict(arrowstyle="->", color="blue"))
-
-    helper.plot_circle(c0, fill=False, linewidth=0.75, edgecolor="black", linestyle="--", in_layout=False)
-    helper.plot_circle(c1, fill=False, linewidth=0.75, edgecolor="black", linestyle="--", in_layout=False)
-
-    box = Aabb2(0, -200, c1.x, 200).expand(200)
-    helper.set_bounds(box)
-
-    fig.tight_layout()
-    fig.show()
-    # fig.savefig("images/cover.png", dpi=150)
 
 
 if __name__ == '__main__':
