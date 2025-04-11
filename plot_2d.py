@@ -80,7 +80,7 @@ def main():
 
     fig.tight_layout()
     fig.show()
-    fig.savefig("images/cover.png", dpi=150)
+    # fig.savefig("images/cover.png", dpi=150)
 
 
 if __name__ == '__main__':

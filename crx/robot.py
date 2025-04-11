@@ -35,6 +35,7 @@ class Robot:
 
         self._joint_radians = [0.0] * 6
         self._frames = None
+        self._actors = []
 
     @property
     def frames(self) -> list[Iso3]:
@@ -48,7 +49,7 @@ class Robot:
         f3 = f2 @ self._frame_link(2)
         f4 = f3 @ self._frame_link(3)
         f5 = f4 @ self._frame_link(4)
-        f6 = f5 @ self._frame_link(5) @ _fanuc_end()
+        f6 = f5 @ self._frame_link(5) @ fanuc_end()
 
         return [f1, f2, f3, f4, f5, f6]
 
@@ -71,9 +72,14 @@ class Robot:
         self._frames = None
 
     def plot(self, helper: PyvistaPlotterHelper, opacity: float = 0.5):
+        for actor in self._actors:
+            helper.plotter.remove_actor(actor)
+        self._actors.clear()
+
         colors = ["gray", "white", "white", "white", "white", "white", "gray"]
         for mesh, c in zip(self.posed_meshes(), colors):
-            helper.add_mesh(mesh, color=c, opacity=opacity)
+            actor = helper.add_mesh(mesh, color=c, opacity=opacity)
+            self._actors.append(actor)
 
     def posed_meshes(self):
         result = []
@@ -106,5 +112,5 @@ def _joints_to_radians(joints: list[float]) -> list[float]:
     return radians
 
 
-def _fanuc_end() -> Iso3:
+def fanuc_end() -> Iso3:
     return Iso3.from_rotation(-numpy.pi / 2.0, 0, 1, 0) @ Iso3.from_rotation(numpy.pi, 1, 0, 0)
