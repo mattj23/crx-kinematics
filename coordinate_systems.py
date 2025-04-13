@@ -1,5 +1,7 @@
 """
-    Assemble the robot side view
+    This script is a test area for exploring the three different working coordinate systems of the kinematics model:
+    the global coordinate system, the wrist coordinate system, and the vertical plane coordinate system.
+
 """
 
 import numpy
@@ -13,16 +15,54 @@ from pyvista import Plotter
 from crx.robot import Robot
 
 
-def o4_candidates(robot: Robot):
-    raw_points = numpy.array([[numpy.cos(x), numpy.sin(x), 0] for x in numpy.linspace(0, 2 * numpy.pi, 500)]) * robot.y1
-    raw_points[:, 2] = -robot.x2
-    return robot.frames[-1].transform_points(raw_points)
-
-
 def main():
     robot = Robot.crx5ia()
     robot.set_joints([-10, -15, 15, 20, 45, 10])
+    # global_view(robot)
+    wrist_view(robot)
 
+
+def wrist_view(robot: Robot):
+    # The wrist reference frame sits at the origin of the O5 with Z pointing to O6 and
+    # X pointing the projection of the origin onto the O5 plane. If the projection is coincident
+    # with the O5 origin, then do ...?
+    target_frame = robot.frames[-2] @ Iso3.from_rotation(numpy.pi / 2.0, 0, 1, 0)
+    # origin = target_frame.inverse()
+
+    # o4_points = o4_candidates(robot)
+    # o4_points = origin.transform_points(o4_points)
+    #
+    plotter = Plotter()
+    helper = PyvistaPlotterHelper(plotter)
+    robot.plot(helper)
+    helper.coordinate_frame(target_frame, size=50, label="Origin")
+    helper.coordinate_frame(target_frame.inverse(), size=50, label="Origin-1")
+    #
+    # plotter.add_lines(o4_points, connected=True, color="red", width=1.0)
+
+    helper.coordinate_frame(Iso3.identity(), size=100, label="Origin")
+    plotter.add_axes()
+    plotter.show()
+
+
+def global_view(robot: Robot):
+    target_frame = robot.frames[-1]
+    o4_points = o4_candidates(robot)
+
+    plotter = Plotter()
+    helper = PyvistaPlotterHelper(plotter)
+    helper.coordinate_frame(target_frame, size=50, label="Target")
+    helper.coordinate_frame(robot.frames[-2], size=50, label="O5")
+    robot.plot(helper, opacity=0.9)
+
+    # O4 candidates
+    plotter.add_lines(o4_points, connected=True, color="red", width=1.0)
+    helper.coordinate_frame(Iso3.identity(), size=100)
+    plotter.add_axes()
+    plotter.show()
+
+
+def planar_view(robot: Robot):
     # There are some things we can set up that we know about the robot
     # ========================================================================
     # The expected hypotenuse of the O3-O4-O5 triangle
@@ -82,7 +122,7 @@ def main():
     helper.plot_circle(c3, fill=False, linewidth=0.75, edgecolor="black", linestyle="--", in_layout=False)
     helper.plot_circle(c2, fill=False, linewidth=0.75, edgecolor="black", linestyle="--", in_layout=False)
     helper.labeled_arrow(o1, c2.point_at_angle(numpy.radians(-110)), "$r_2$", shift=(25, 0), **arrow_props)
-    helper.labeled_arrow(o4, c3.point_at_angle(numpy.radians(-60)), "$r_3$",  shift=(-25, 0), **arrow_props)
+    helper.labeled_arrow(o4, c3.point_at_angle(numpy.radians(-60)), "$r_3$", shift=(-25, 0), **arrow_props)
 
     # Find a and h to identify O3
     a = (o1.x ** 2 + c3.r ** 2 - c2.r ** 2) / (2 * o1.x)
@@ -119,6 +159,12 @@ def plot_line_robot(ax: Axes, robot: Robot, view: Iso3):
         if edge_type == 0:
             visible.add_segment(p0, p1)
     ax.plot(*visible.xy, color="black", linewidth=0.5, alpha=0.25)
+
+
+def o4_candidates(robot: Robot):
+    raw_points = numpy.array([[numpy.cos(x), numpy.sin(x), 0] for x in numpy.linspace(0, 2 * numpy.pi, 500)]) * robot.y1
+    raw_points[:, 2] = -robot.x2
+    return robot.frames[-1].transform_points(raw_points)
 
 
 if __name__ == '__main__':
