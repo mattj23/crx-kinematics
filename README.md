@@ -142,6 +142,22 @@ To represent isometries for frames, positions, and offsets FANUC uses a shortene
 
 ## The CRX Kinematic Layout
 
+| Robot      | J2 -> J3 (`z1`) | J3 -> J5 (`x1`) | J5 -> Flange (`x2`) | J1 -> J6 (`y1`) |
+|------------|-----------------|-----------------|---------------------|-----------------|
+| CRX-5iA    | 410             | 430             | 145                 | 130             |
+| CRX-10iA   | 540             | 540             | 160                 | 150             |
+| CRX-10iA/L | 710             | 540             | 160                 | 150             |
+| CRX-10iA/L | 710             | 540             | 160                 | 150             |
+| CRX-20iA/L | 710             | 540             | 160                 | 150             |
+| CRX-30iA   | 950             | 750             | 180                 | 185             |
+
+| Kinematic Parameter          | Model Parameter |
+|------------------------------|-----------------|
+| Distance from $O_1$ to $O_3$ | `z1`            |
+| Distance from $O_3$ to $O_4$ | `x1`            |
+| Distance from $O_4$ to $O_5$ | `y1`            |
+| Distance from $O_5$ to $O_6$ | `x2`            |
+
 ## Inverse Kinematics
 
 ### Steps
