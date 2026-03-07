@@ -142,5 +142,15 @@ To represent isometries for frames, positions, and offsets FANUC uses a shortene
 
 ## The CRX Kinematic Layout
 
+## Inverse Kinematics
+
+### Steps
+
+The approach by Abbes and Poisson takes the following steps:
+
+1. For a desired pose at the flange, we can immediately set the point $O_6$ to the desired center of the flange, and $O_5$ is offset from $O_6$ by the flange-to-wrist distance in the direction opposite the flange normal.  The point $O_1$ doesn't move, and is always at the origin.
+2. $O_4$ must lie somewhere on a circle centered at $O_5$, with a radius equal to the wrist offset distance, and in a plane parallel to the robot flange.
+3. Because the distances from $O_1$ to $O_3$ and from $O_3$ to $O_4$ are fixed by the robot's link lengths, and because $O_3$ and $O_4$ always lie in a plane containing the $+Z$ axis, for every candidate $O_4$ position there may be 0, 1 or 2 candidate $O_3$ positions. This can be found by finding the plane that passes through the candidate $O_4$ and the $+Z$ axis, then finding the intersection of the two circles in that plane centered at $O_1$ and $O_4$ with radii equal to the arm and forearm lengths.
+4. The construction of the CRX robots means that the vectors $\overrightarrow{O_3 O_4}$ and $\overrightarrow{O_4 O_5}$ will always be perpendicular.  Abbes and Poisson make use of this by finding where their dot products are zero.  Alternately, $O_3$, $O_4$, and $O_5$ will always be the corners of a right triangle, so another approach is to find where the distance between $O_5$ and $O_3$ matches the expected distance for the robot model.
 
 [^abbes]: Abbes, Manel, and Gérard Poisson. "Geometric Approach for Inverse Kinematics of the FANUC CRX Collaborative Robot." Robotics 13, no. 6 (June 14, 2024): 91. https://doi.org/10.3390/robotics13060091.

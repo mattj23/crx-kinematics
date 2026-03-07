@@ -14,8 +14,11 @@ _o4_n = 10000
 
 
 def main():
-    robot = Robot.crx5ia()
-    robot.set_joints([10, -80, 10, 20, -20, 45])
+    # robot = Robot.crx5ia()
+    # robot.set_joints([10, -80, 10, 20, -20, 45])
+    robot = Robot.crx10ia()
+    # robot.set_joints([10, -80, 10, 20, -20, 45])
+    robot.set_joints([10, -80, 10, 60, -20, 45])
     target_frame = robot.frames[-1]
 
     # Do the calculations

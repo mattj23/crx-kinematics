@@ -17,8 +17,8 @@ def main():
             Iso3.from_rotation(-numpy.pi / 2, 1, 0, 0) @
             Iso3.from_rotation(-numpy.pi / 2, 0, 0, 1))
 
-    robot = Robot.crx5ia()
-    robot.set_joints([-10, -15, 15, 20, 45, 10])
+    robot = Robot.crx10ia()
+    robot.set_joints([10, -80, 10, 20, -20, 45])
     # robot.set_joints([0, 0, 0, 0, 0, 0])
 
     fig: Figure = figure(figsize=(8, 8))
@@ -31,7 +31,7 @@ def main():
     for p, label in frame_origins:
         p = view @ p
         origins.append(list(p))
-        helper.annotate_text_only(label, p + shift, color="red", horizontalalignment="center",
+        helper.text(label, p + shift, color="red", horizontalalignment="center",
                                   verticalalignment="center", fontsize=18, weight="bold")
 
     origins = numpy.array(origins)
