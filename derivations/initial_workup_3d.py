@@ -7,6 +7,7 @@ from pyvista import Plotter
 from pathlib import Path
 from engeom.geom3 import Iso3, Mesh, Vector3, Point3
 from engeom.plot import PyvistaPlotterHelper
+from derivations.initial_workup import o4_candidate
 
 from crx.robot import Robot, fanuc_end
 
@@ -59,7 +60,8 @@ def main():
     plotter.add_lines(o4_points, connected=True, color="red", width=1.0)
 
     # For a random O4, plot the O3 candidate circle
-    p = Point3(*o4_points[_o4_n // 2])
+    # p = Point3(*o4_points[_o4_n // 2])
+    p = o4_candidate(robot, numpy.pi / 2.5)
     helper.add_points(p, color="blue", point_size=10, render_points_as_spheres=True)
 
     o4_iso = Iso3.from_basis_zy(p - o5, o6 - o5, o5) @ Iso3.from_translation(0, 0, robot.y1)
