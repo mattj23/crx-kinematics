@@ -1,48 +1,46 @@
 # Alternate Method
 
+![Diagram of links and joints](../images/links_and_joints.png)
 ![Diagram of kinematic parameters](../images/parameters.png)
+
 
 ## Derivation of an Alternate Solution
 
-### Conditions on a Solution
+### Constraints on a Solution
 
-For any solution to be valid, it must satisfy all the following conditions:
+For any solution to be valid, it must satisfy all the following geometric constraints:
 
-1. The distance from $O_3$ to $O_1$ must be equal to $z_1$.
-2. The distance from $O_3$ to $O_4$ must be equal to $x_1$.
-3. The distance from $O_5$ to $O_4$ must be equal to $y_1$.
-4. The cross-product of the vectors $\overrightarrow{O_1O_3}$ and $\overrightarrow{O_1O_4}$ have a z component of zero.
-5. The vectors $\overrightarrow{O_4O_5}$ and $\overrightarrow{O_4O_3}$ are perpendicular.
-    - This also means that the distance from $O_5$ to $O_3$ must be equal to $\sqrt{x_1^2 + y_1^2}$ 
+|   | Constraint                                                                                                           | Explanation                                                                                                                                                                                                                                              |
+|---|----------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| A | The distance from $O_3$ to $O_1$ must be equal to $z_1$                                                              | This distance is controlled by Link 2, a single rigid body.                                                                                                                                                                                              |
+| B | The distance from $O_3$ to $O_4$ must be equal to $x_1$                                                              | This distance is controlled by Link 3 and Link 4, and the distance does not change with $\overrightarrow{J_4}$ rotation.                                                                                                                                 |
+| C | The distance from $O_4$ to $O_5$ must be equal to $y_1$                                                              | This distance is controlled by Link 4 and Link 5, and the distance does not change with $\overrightarrow{J_5}$ rotation.                                                                                                                                 |
+| D | The cross-product of the vectors $\overrightarrow{O_1O_3}$ and $\overrightarrow{O_1O_4}$ have a z component of zero. | Because of how the robot is constructed, no matter how $\overrightarrow{J_1}$, $\overrightarrow{J_2}$, $\overrightarrow{J_3}$, and $\overrightarrow{J_4}$ rotate, $O_1$, $O_3$, and $O_4$ are always in the same vertical plane containing the $Z$ axis. |
+| E | The vectors $\overrightarrow{O_4O_5}$ and $\overrightarrow{O_4O_3}$ are perpendicular.                               | Link 4 and Link 5 are constructed at a right angle.                                                                                                                                                                                                      |
 
-### Geometric Interpretation of Conditions
+### Initial Problem Setup
 
-From these conditions, we can derive the following geometric interpretations:
+From the known geometric constraints, we can start to put together an intuition for the physical layout of the inverse kinemeatics problem.
 
-1. $O_4$ must exist on a circle centered around $O_5$, with radius $y_1$, normal to the vector $\overrightarrow{O_5O_6}$.
-2. For any candidate $O_{4c}$, the point $O_{3c}$ must: 
-    - Exist on a circle centered around $O_{4c}$, with radius $x_1$, normal to the vector $\overrightarrow{O_{4c}O_5}$.
-    - Exist on the surface of a sphere centered around $O_1$, with radius $z_1$.
-3. For any candidate $O_{4c}$, there can be no more than 2 that satisfy the above conditions.
+First, during inverse kinematics, we are supplied a desired coordinate frame (isometry) at the end of the robot flange.  Thus, the frame of the last link is already known. This also means that the _origin_ of the 5th kinematic frame, $O_5$, is also known.
 
-Additionally, the rotation of a circle $x^2 + y^2 = r^2$, $z=c$ around the x-axis by all possible angles $\theta$ forms 
-a partial sphere (the sphere is missing all data where $x < -r$ and $x > r$) with radius $\sqrt{r^2 + c^2}$, centered at the origin.
+Working backwards from the robot flange, Link 5 is the next link, connected to the flange through $\overrightarrow{J_6}$. This joint is aligned with the axis of the flange, and as it rotates, the position of $O_4$ will trace a single circle in space around $O_5$. This circle is the set of all possible locations of $O_4$ that do not violate Constraint C for the desired IK solution. This is one of the key insights of Abbes and Poisson.
 
-This means that we can consolidate the geometric assumptions:
-1. $O_4$ must exist on a circle centered around $O_5$, with radius $y_1$, normal to the vector $\overrightarrow{O_5O_6}$.
-2. $O_3$ must exist at the intersection of a sphere at $O_1$ with radius $z_1$, and a sphere at $O_5$ with radius $\sqrt{x_1^2 + y_1^2}$. The intersection of two spheres is a 2D circle.  The circle can be further clipped at the planes at $d=\pm x_1$ with normal vector $\overrightarrow{O_5O_6}$.
-3. The relationship between the $O_3$ and $O_4$ points is such that the cross-product of the vectors $\overrightarrow{O_1O_3}$ and $\overrightarrow{O_1O_4}$ have a z component of zero, and the distance between $O_3$ and $O_4$ is $x_1$.
+We notice that, because of Constraint E, the distance between $O_5$ and $O_3$ is also constant, with a value of $\sqrt{x_1^2 + y_1^2}$. This means that the position of $O_3$ must, by definition, lie on the surface of a sphere centered around $O_5$.
 
-# Scratch thoughts
+However, $O_3$ must also be a fixed distance from $O_1$ because of Constraint A, so its position must also lie on the surface of a sphere with radius $z_1$ centered at $O_1$ (the world origin). To satisfy both Constraint A and Constraint E simultaneously, the set of possible $O_3$ points is the intersection of these two spheres, which is a circle centered on, and perpendicular to, the vector $\overrightarrow{O_1 O_5}$.
 
-- If we reduce the core problem to a 3d circle at a height z above the origin, with a circle in the x-y plane with a
-  radius of the sphere intersection, and the circle is always tilted in the same direction, what are the possible 
-  configurations of the problem?
-    - circle flat
-    - circle vertical
-    - circle tilted
-- Under this coordinate system, if the large circle is ever cut, it will always be symmetrical about x and in the 
-- direction where the circle is tilted down
-- From this can we create a relationship between $\theta$ for the $O_4$ candidate and $\theta$ for the $O_3$ candidate?
-  We already can probably tell directions on any point since we can compute the partial derivatives, I think?
-- Can we use that to see where we would be spanning the zero cross-product value?
+At this point we've run out of easy geometric simplifications. We have the circle $\mathcal{C}_4$ containing possible candidates for $O_4$ and another circle $\mathcal{C}_3$ containing possible candidates for $O_3$.
+
+$$ O_3 \in \mathcal{C}_3 $$
+$$ O_4 \in \mathcal{C}_4 $$
+
+The relationship between possible values of $O_3$ and $O_4$ is the distance Constraint B, specifying that they must be $x_1$ apart, and the plane constraint D which forces $O_3$ and $O_4$ to be in a single plane containing the $Z$ axis.  To go further, we must be able to match points between $C_3$ and $C_4$ and check their cross-products, searching for zeros.
+
+### The $O_4$ to $O_3$ Matching Problem
+
+For any candidate point $\hat{O}_4$ there are zero, one, or two possible points in $\mathcal{C}_3$ that may satisfy both the distance Constraint B and the perpinducualrity Constraint E. Geometrically we can think of this as creating a plane containing $\hat{O}_4$, with a normal of $\overrightarrow{O_5 \hat{O}_4}$ and taking its intersection with circle $\mathcal{C}_3$. 
+
+The problem of finding valid pairs $(O_3, O_4)$ will eventually become a computational search. We could naively begin a very dense check of points in $\mathcal{C}_4$ using plane intersections with $\mathcal{C}_3$ and try to identify pairs that satisfy the planar Constraint D. However, at this point we do not fully understand the behavior of the relation, and so we do not know how dense that search would need to be.
+
+

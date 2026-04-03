@@ -111,16 +111,43 @@ def main():
 
         p = o4_circle_r.plane.new_parallel(-robot.x1)
         end_trim = o3_circle_r.intersect_plane(p)
-        if end_trim:
-            plotter.points(*[o3_circle_r.at_angle(x).point for x in end_trim], color="green")
+        if len(end_trim) > 1:
+            end_trim.sort()
+            angles = numpy.linspace(*end_trim, 1000)
+            plotter.pv.add_lines(o3_circle_r.at_angles(angles)[:, :3], connected=True, color="blue", width=2.0)
+        else:
+            plotter.circle(o3_circle_r, edge_color="blue", face_color=None, edge_width=2.5)
 
+        # Set up the torus equivalent operation
+        limit_l, limit_u = torus_equiv(o3_circle_r.r, robot.x1, o4_circle_r)
 
-        plotter.circle(o3_circle_r, edge_color="blue", face_color=None, edge_width=1.5)
+        if limit_u is not None:
+            plane_u = Plane3(0, 0, 1, limit_u)
+            marks = [o4_circle_r.at_angle(t).point for t in o4_circle_r.intersect_plane(plane_u)]
+            plotter.points(*marks, color="red", point_size=10)
+
         plotter.circle(o4_circle_r, edge_color="red", face_color=None, edge_width=1.5)
         plotter.coordinate_frame(Iso3.identity(), size=100)
 
 
         plotter.show()
+
+def torus_equiv(o3_r: float, x1: float, o4_circle: Circle3):
+    c4 = Circle2(0, o4_circle.center.z, o4_circle.r)
+    c3 = Circle2(o3_r, 0, x1)
+    intersections = c3.intersections_with(c4)
+    if len(intersections) == 0:
+        return None, None
+
+    intersections.sort(key=lambda p: p.y)
+    top = intersections[-1]
+    bottom = intersections[0]
+    if bottom.x > 0:
+        return bottom.y, top.y
+    else:
+        return None, top.y
+
+
 
 
 
