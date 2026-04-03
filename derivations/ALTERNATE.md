@@ -39,7 +39,7 @@ $$ O_4 \in \mathcal{C}_4 $$
 
 The relationship between possible values of $O_3$ and $O_4$ is the distance Constraint B, specifying that they must be $x_1$ apart, and the plane constraint D which forces $O_3$ and $O_4$ to be in a single plane containing the $Z$ axis.  To go further, we must be able to match points between $C_3$ and $C_4$ and check their cross-products, searching for zeros.
 
-### The $O_4$ to $O_3$ Matching Problem
+### Simplifying the $O_4$ to $O_3$ Matching Problem
 
 For any candidate point $\hat{O}_4$ there are zero, one, or two possible points in $\mathcal{C}_3$ that may satisfy both the distance Constraint B and the perpinducualrity Constraint E. Geometrically we can think of this as creating a plane containing $\hat{O}_4$, with a normal of $\overrightarrow{O_5 \hat{O}_4}$ and taking its intersection with circle $\mathcal{C}_3$. 
 
@@ -70,5 +70,34 @@ In the latter case, we can shuffle the problem into a different geometric arrang
 - $\phi$: the angle between the normal of $\mathcal{C}_4$ and the normal of $\mathcal{C}_3$
 
 The reformulated problem consists of a circle on the $XY$ plane of radius $r_3$ centered at the origin $(0, 0, 0)$, and a circle of radius $y_1$ centered at $(0, 0, h)$, rotated about the $Y$ direction by $\phi$, such that the lowest point of the circle is always in the $+X$ direction (unless $\phi=\pi / 2$).
+
+Importantly, there is an easily calculated isometry that can transform entities from the world coordinate system to the reduced problem coordinate system and back again, allowing us to transform the original world $Z$ axis into the reduced problem space to check against Constraint D, and then to move valid $(O_3, O_4)$ pairs back out into the world coordinate system for calculating joint angles.
+
+### Working in the Simplified $O_4$ to $O_3$ Problem Space
+
+In the simplified problem space, the original origin and $Z$ axis are now at some arbitrary position $O'$, and orientation $\overrightarrow{Z}'$, but the rest of the entities are symmetrical about the $XZ$ plane and all located near the origin.
+
+- Circle $\mathcal{C}_3$ is now a circle of radius $r_3$ in the $XY$ plane, centered at $(0, 0, 0)$ 
+- Circle $\mathcal{C}_4$ is now a circle of radius $y_1$, centered at $c_4 = (0, 0, h)$, rotated about the $Y$ direction by $\phi$
+
+If we define further define circle $\mathcal{C}_4$ as having a $\theta_0$ angle corresponding with the $+X$ direction, then any candidate point can be defined as a function $\hat{O}_4(\theta)$, and corresponding points in $\mathcal{C}_3$ (which we will call $\hat{O}_{3i}(\theta)$) can be found by plane intersections.
+
+For any candidate point $\hat{O}_4(\theta)$: 
+
+- There is a projection of that point onto the $XY$ plane forming vector $\overrightarrow{p}$
+- There is a plane $P$ passing through $\hat{O}_4(\theta)$ with normal $\overrightarrow{c_4 \hat{O}_4(\theta)}$
+- There are zero, one, or two points $\hat{O}_{3i}(\theta)$ in $\mathcal{C}_3$ that intersect with $P$. If there are two points, one will be clockwise from $\overrightarrow{p}$ and the other anticlockwise.
+
+The distance relation between $\hat{O}_4(\theta)$ and its corresponding points means that smooth, continuous changes of $\theta$ will result in smooth, continuous changes of $\hat{O}_{3i}(\theta)$. This implies that the derivative of the $Z'$ component of $\overrightarrow{O' \hat{O}_4(\theta)} \times O' \overrightarrow{\hat{O}_{3i}(\theta)}$ is also smooth and continuous.  However, we will still need to perform a thoughtful search if we don't want to miss zeros.
+
+There are a few more things that we can consider:
+
+- Because the simplified problem space is symmetric across the $XZ$ plane, the corresponding points $\hat{O}_{3i}(-\theta)$ can always be found by taking $\hat{O}_{3i}(\theta)$ and inverting the point's $y$ component.  Clockwise points will become anticlockwise, and vice versa.
+- We have oversimplified circles $\mathcal{C}_3$ and $\mathcal{C}_4$ up to this point; in reality, they do not necessarily represent _all_ possible allowable positions for $O_3$ and $O_4$, respectively.
+    - The rotation of $O_3$ around $O_4$ as it rotates around $O_5$ does not form a _full_ sphere as described in the initial problem setup. Instead, it forms a sphere with a hole of diameter $y_1$ on both sides. Alternately, it can be conceptualized as the sphere stops existing beyond the planes parallel to $\mathcal{C}_4$ by $\pm x_1$. 
+    - As the height $h$ increases, the circle $\mathcal{C}_4$ will begin to go out of reach of $\mathcal{C}_3$.  First, the highest points on the circle will no longer be reachable.  Second, it may be possible for the lowest points to become unreachable, depending on how quickly $\mathcal{C}_3$ shrinks as $h$ increases. **(TODO: CHECK THIS)**
+- A measurement taken at an arbitrary $\hat{O}_4(\theta)$ point will either produce corresponding points in $\mathcal{C}_3$ or not, but it doesn't tell us at what $\theta$ they became unreachable.  The good news is that we can find the bounds of $\theta$'s valid domain with simple geometric checks, allowing us to start and stop at the ends of the domain.
+  - The bounds of $\theta$ can be found with plane intersections equivalent to a volume intersection of a torus with major radius $r_3$ and minor radius $x_1$ against the surface of sphere $\mathcal{S}_4$.
+  - The bounds of circle $\mathcal{C}_3$ can be found by doing plane intersections offset from $\mathcal{C}_4$ by $\pm x_1$.
 
 
