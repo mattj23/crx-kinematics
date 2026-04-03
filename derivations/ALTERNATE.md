@@ -80,7 +80,9 @@ In the simplified problem space, the original origin and $Z$ axis are now at som
 - Circle $\mathcal{C}_3$ is now a circle of radius $r_3$ in the $XY$ plane, centered at $(0, 0, 0)$ 
 - Circle $\mathcal{C}_4$ is now a circle of radius $y_1$, centered at $c_4 = (0, 0, h)$, rotated about the $Y$ direction by $\phi$
 
-If we define further define circle $\mathcal{C}_4$ as having a $\theta_0$ angle corresponding with the $+X$ direction, then any candidate point can be defined as a function $\hat{O}_4(\theta)$, and corresponding points in $\mathcal{C}_3$ (which we will call $\hat{O}_{3i}(\theta)$) can be found by plane intersections.
+If we define further define circle $\mathcal{C}_4$ as having a $\theta_0$ angle corresponding with the $+X$ direction, then any candidate point can be defined as a function $\hat{O}_4(\theta)$, and corresponding points in $\mathcal{C}_3$ can be found by plane intersections.
+
+We will call these points $\hat{O}_{3i}(\theta)$.
 
 For any candidate point $\hat{O}_4(\theta)$: 
 

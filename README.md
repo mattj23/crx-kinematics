@@ -1,32 +1,66 @@
 # FANUC CRX Series Inverse Kinematics
 
-This repository contains the derivation of a general inverse kinematics model for the entire family of FANUC CRX collaborative robots based on the paper by Abbes and Poisson[^abbes] titled "Geometric Approach for Inverse Kinematics of the FANUC CRX Collaborative Robot." 
-The paper provides a geometry-based framework for calculating joint positions for any robot with the CRX layout when given a desired pose at the robot flange, and can handle calculating the up-to-16 different redundant joint configurations which can produce that pose.
+## Overview and Motivation
+This repository contains the derivation of a general inverse kinematics model for the entire family of FANUC CRX collaborative robots inspired by the paper by Abbes and Poisson[^abbes] titled "Geometric Approach for Inverse Kinematics of the FANUC CRX Collaborative Robot." 
+
+This implementation starts with some general observations that Abbes and Poission made about the geometric layout of the CRX family and its inherent constraints.  Like Abbes and Poission, I start at the end effector and work backwards, relying heavily on some of their insights about the relationship between the $O_3$ and $O_4$ points.  However, I quickly depart from their general method and instead perform more preparation steps with geometric primitives before returning to search for a zero-value cross-product. 
+
+Note that while this implementation would not have been possible without the work and insights of Abbes and Poisson, it does not faithfully follow their approach and should not be used to benchmark or evaluate their work.
 
 The main content of this repository is this README file.  The Python code contains a reference implementation and the scripts used to generate the diagrams.  If you want to _use_ the inverse kinematics models for this family of robots, there will be a Rust language implementation with a Python binary extension module.
 
-## Quick Overview
+### Issues with Source Material
+
+The Abbes and Poission paper provides a geometry-based framework for calculating joint positions for any robot with the CRX layout when given a desired pose at the robot flange. It can handle calculating the up-to-16 different redundant joint configurations which can produce that pose.
+
+Unfortunately, while the Abbes and Poisson approach is intuitive, I was not able to directly make it work.  There are two libraries which I was able to find which described themselves as having implementations of the Abbes and Poission approach, but as of now (April 2026) neither functions exactly as expected:
+
+- [Fanuc_RMI_API](https://github.com/vertec-io/Fanuc_RMI_API): written in Rust, has a `sim/` module. I attempted to use this first, but `cargo test` showed it as failing two of its own unit tests, one for a multi-result solution, and one related to round-trip tests of the forward and inverse kinematic calcuations.
+- [crx_kinematics](https://github.com/danielcranston/crx_kinematics): this is a ROS2 package written in C++, and has a `robot.cpp` and `robot.hpp` source files that I extracted to test separate from the rest of the ROS2 package.  This seemed to work on simple cases, but failed a round-trip on [known problem case for the CRX-10iA](https://github.com/mattj23/crx-kinematics/issues/1).
+
+Separately, I also attempted to use [ik-geo-rust](https://github.com/Verdant-Evolution/ik-geo-rust), but the specific configuration of the CRX family (3 parallel axes, according to the author of the paper it was based on) does not appear to be implemented in the Rust library.
+
+## The Fanuc CRX Kinematic Layout
 
 The FANUC CRX series is a relatively new line of collaborative industrial robot arm with a traditional 6-axis serial layout but forgoing the spherical wrist.
-The first model, the CRX-10iA was introduced in 2019, and currently (2025) there are six total kinematically unique models, plus a number of food-safe variants and a paint version of the 10iA/L.
-All robots in the series have the same kinematic layout, varying only in link lengths. 
+The first model, the CRX-10iA was introduced in 2019, and currently (2026) there are six total kinematically unique models, plus a number of food-safe variants and a paint version of the 10iA/L.
+All robots in the series have the same kinematic layout, varying only in link lengths.
 
 Because of the non-spherical wrist and the parallel J2/J3 axes, there aren't any pure analytical general solutions to the CRX inverse kinematics.
-With FANUC robots, like most industrial arms, there are multiple joint configurations that can achieve most end effector poses and they must be accounted for during linear motion, meaning that most naive solver-based IK approaches require extra complexity.  The approach provided by Abbes and Poisson offers an intuitive, alternative method.
+With FANUC robots, like most industrial arms, there are multiple joint configurations that can achieve most end effector poses and they must be accounted for during linear motion, meaning that most naive solver-based IK approaches require extra complexity. 
 
-<img src="images/cover.png" width="500">
+Consider the following diagram of a CRX-10iA robot, showing the general links and joints. The robot base is fixed, and the robot's internal kinematics set the world origin as the intersection of the $\overrightarrow{J_1}$ and $\overrightarrow{J_2}$ axes, which yields some mathematical niceties.
 
-The general approach by Abbes and Poisson is based on the following observations:
+![CRX-10iA](images/links_and_joints.png)
 
-1. Because of the offset wrist, for any desired pose at the flange, the origin of joint four $O_4$ must lie somewhere on a circular trajectory centered at $O_5$, with a radius equal to the wrist offset distance, and in a plane parallel to the robot flange.
-2. $O_1$ will always be at the origin $(0, 0, 0)$ and $O_3$ and $O_4$ must always lie in a plane $P$ that contains the $z$ axis.
-3. Thus, for any candidate $O_4$ position along the circle, there may be $0$, $1$, or $2$ candidate $O_3$ positions, located at the intersection of two circles in the plane $P$ defined by the $z$ axis and the candidate $O_4$. The radii of the two circles are the lengths of the arm and the forearm.
-4. Because the physical construction of the elbow, forearm, and wrist, the vectors $\overrightarrow{O_3 O_4}$ and $\overrightarrow{O_4 O_5}$ will always be perpendicular. Abbes and Poisson make use of this by finding where their dot products are zero. Alternately, $O_3$, $O_4$, and $O_5$ will always be the corners of a right triangle, and so another approach is possible by finding where the distance between $O_5$ and $O_3$ matches the expected distance for the robot model.
-5. Each pair of valid (as defined by #2 and #3) $O_3$ and $O_4$ positions corresponds with a kinematic configuration of the robot which can meet the desired end pose.  From the locations of $O_6$ (defined by the desired pose), $O_4$, and $O_3$ the joint angles can be trivially extracted.
+The robot's kinematics can be represented with four unique parameters, which are the distances between the robot's kinematic link origins.  The origins are points in the robot's world coordinate system and are labeled $O_1$ through $O_6$. Point $O_1$ is always at $(0, 0, 0)$ regardless of what the joints do, and $O_6$ is at the intersection of $\overrightarrow{J_6}$ and the robot flange. The other origins are located at the intersection of the different axes.
 
-This approach will be covered in more detail in the following sections.
+![CRX-10iA](images/parameters.png)
+
+| Kinematic Parameter          | Model Parameter |
+|------------------------------|-----------------|
+| Distance from $O_1$ to $O_3$ | `z1`            |
+| Distance from $O_3$ to $O_4$ | `x1`            |
+| Distance from $O_4$ to $O_5$ | `y1`            |
+| Distance from $O_5$ to $O_6$ | `x2`            |
+
+Because the entire CRX family has the same kinematic layout, the difference in modeling them is only the variation in the four parameters. The following table contains the parameters for the full family.  Be aware that the CR-35iA is not a member of the CRX family, but rather has spherical wrist kinematics like non-collaborative robots in Fanuc's product catalogue.
+
+| Robot      | J2 -> J3 (`z1`) | J3 -> J5 (`x1`) | J5 -> Flange (`x2`) | J1 -> J6 (`y1`) |
+|------------|-----------------|-----------------|---------------------|-----------------|
+| CRX-5iA    | 410             | 430             | 145                 | 130             |
+| CRX-10iA   | 540             | 540             | 160                 | 150             |
+| CRX-10iA/L | 710             | 540             | 160                 | 150             |
+| CRX-10iA/L | 710             | 540             | 160                 | 150             |
+| CRX-20iA/L | 710             | 540             | 160                 | 150             |
+| CRX-30iA   | 950             | 750             | 180                 | 185             |
+
+--- 
 
 ## Background Principles and Primer
+
+> [!NOTE]
+> If you are new to FANUC robotics and/or kinematics, this section has some notes I've compiled over the years to help explain the concepts to other engineers. If you are already familiar with these concepts, this section is likely of no value to you.
 
 This section has a basic treatment of some kinematic principles, specifically trying to bridge the gap between FANUC robot controller concepts and the underlying mathematical ideas needed to work with them.  There is often a slight mismatch in language, or opaqueness in how FANUC thinks about each concept, that can make it hard to figure out what things actually mean and how to use them.
 
@@ -62,15 +96,15 @@ Though they are stored the same way and are mathematically identical, frames/pos
 - Positions are _recorded_ by extracting and saving the isometry between the active User Frame isometry and the isometry describing the current location and orientation of the TCP. When the robot is instructed to _move to_ a position, its isometry is applied to the User Frame and the robot will work out where to move the joints so that the TCP matches with the result.
 - Offsets are usually small adjustments that can be applied to a destination position in a program, typically to "touch up" an important location without modifying the original position or position register.  The isometry of the offset is applied to the position being adjusted before the robot is instructed to move to it.
 
-There is one last isometry which is always changing and is usually only referenced indirectly. It is the kinematic isometry: the transformation that describes relationship between the world origin and the location + orientation of the robot flange.  The kinematic isometry is a function of the six joint angles, and every unique combination of joint angles has exactly one isometry associated with it, which can be computed by calculating the forward kinematics of the robot.  However, this isometry is not necessarily unique to the joint angles, and in most cases there are at least two different sets of joint angles which can achieve an isometry within the robot reach.
+There is one last isometry that is always changing and is usually only referenced indirectly. It is the kinematic isometry: the transformation that describes relationship between the world origin and the location + orientation of the robot flange.  The kinematic isometry is a function of the six joint angles, and every unique combination of joint angles has exactly one isometry associated with it, which can be computed by calculating the forward kinematics of the robot.  However, this isometry is not necessarily unique to the joint angles, and in most cases there are at least two different sets of joint angles which can achieve an isometry within the robot reach.
 
 - The kinematic isometry is what you see on the controller's Teach Pendant when watch the robot's current position in world cartesian mode with an empty Tool Frame.
 - _Forward_ kinematics is the process of taking the six joint angles and computing the kinematic isometry.
-- _Inverse_ kinematics is the the process of taking a desired kinematic isometry and back-calculating the different combinations of joint angles which could achieve it.
+- _Inverse_ kinematics is the process of taking a desired kinematic isometry and back-calculating the different combinations of joint angles which could achieve it.
 
 ### Mathematical Use of Isometries
 
-In three dimensional space $\mathbb{R^3}$ isometries can be stored in 4x4 matrices, allowing them to be composed together by multiplication or inverted to reverse their effects.  When working directly on a FANUC controller, such as the R-30iB Mini Plus used by the smaller CRX models, the controller has its own kinematics model and will be multiplying isometries together internally and you will never see them.  
+In three-dimensional space $\mathbb{R^3}$ isometries can be stored in 4x4 matrices, allowing them to be composed together by multiplication or inverted to reverse their effects.  When working directly on a FANUC controller, such as the R-30iB Mini Plus used by the smaller CRX models, the controller has its own kinematics model and will be multiplying isometries together internally, and you will never see them.  
 
 When trying to construct an external kinematics model yourself, or trying to simulate the robot's behavior in your programming language of choice, you will need to be able to work directly with isometries using at least the following operations:
 
@@ -135,38 +169,5 @@ $$
 ### XYZWPR Representation of Isometries
 
 To represent isometries for frames, positions, and offsets FANUC uses a shortened, mostly-unambiguous representation of an isometry based on Euler angles.  The letters WPR stand for yaW, Pitch, Roll, respectively.  In FANUC's definition, yaw is rotation around the X axis, pitch is around the Y axis, and roll is around the Z axis.  The X, Y, and Z values are in millimeters, and the W, P, R values are in degrees.
-
-### The Forward Kinematic Loop
-
-### FANUC Joint Configurations
-
-## The CRX Kinematic Layout
-
-| Robot      | J2 -> J3 (`z1`) | J3 -> J5 (`x1`) | J5 -> Flange (`x2`) | J1 -> J6 (`y1`) |
-|------------|-----------------|-----------------|---------------------|-----------------|
-| CRX-5iA    | 410             | 430             | 145                 | 130             |
-| CRX-10iA   | 540             | 540             | 160                 | 150             |
-| CRX-10iA/L | 710             | 540             | 160                 | 150             |
-| CRX-10iA/L | 710             | 540             | 160                 | 150             |
-| CRX-20iA/L | 710             | 540             | 160                 | 150             |
-| CRX-30iA   | 950             | 750             | 180                 | 185             |
-
-| Kinematic Parameter          | Model Parameter |
-|------------------------------|-----------------|
-| Distance from $O_1$ to $O_3$ | `z1`            |
-| Distance from $O_3$ to $O_4$ | `x1`            |
-| Distance from $O_4$ to $O_5$ | `y1`            |
-| Distance from $O_5$ to $O_6$ | `x2`            |
-
-## Inverse Kinematics
-
-### Steps
-
-The approach by Abbes and Poisson takes the following steps:
-
-1. For a desired pose at the flange, we can immediately set the point $O_6$ to the desired center of the flange, and $O_5$ is offset from $O_6$ by the flange-to-wrist distance in the direction opposite the flange normal.  The point $O_1$ doesn't move, and is always at the origin.
-2. $O_4$ must lie somewhere on a circle centered at $O_5$, with a radius equal to the wrist offset distance, and in a plane parallel to the robot flange.
-3. Because the distances from $O_1$ to $O_3$ and from $O_3$ to $O_4$ are fixed by the robot's link lengths, and because $O_3$ and $O_4$ always lie in a plane containing the $+Z$ axis, for every candidate $O_4$ position there may be 0, 1 or 2 candidate $O_3$ positions. This can be found by finding the plane that passes through the candidate $O_4$ and the $+Z$ axis, then finding the intersection of the two circles in that plane centered at $O_1$ and $O_4$ with radii equal to the arm and forearm lengths.
-4. The construction of the CRX robots means that the vectors $\overrightarrow{O_3 O_4}$ and $\overrightarrow{O_4 O_5}$ will always be perpendicular.  Abbes and Poisson make use of this by finding where their dot products are zero.  Alternately, $O_3$, $O_4$, and $O_5$ will always be the corners of a right triangle, so another approach is to find where the distance between $O_5$ and $O_3$ matches the expected distance for the robot model.
 
 [^abbes]: Abbes, Manel, and Gérard Poisson. "Geometric Approach for Inverse Kinematics of the FANUC CRX Collaborative Robot." Robotics 13, no. 6 (June 14, 2024): 91. https://doi.org/10.3390/robotics13060091.
