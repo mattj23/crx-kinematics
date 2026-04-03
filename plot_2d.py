@@ -6,6 +6,8 @@ import numpy
 from engeom.geom3 import Iso3, Point3, Vector3
 from engeom.plot import MatplotlibAxesHelper, TraceBuilder
 from matplotlib.pyplot import figure, Figure, Axes
+
+from crx.derivation_tools import optional_axis_label
 from display_forward import upper_lower, corner_xy
 
 from crx.robot import Robot
@@ -77,6 +79,7 @@ def main():
 
     ax.plot(*upper.xy, color="blue", linewidth=0.75, linestyle="--")
     ax.plot(*lower.xy, color="green", linewidth=0.75, linestyle="--")
+
 
     fig.tight_layout()
     fig.show()

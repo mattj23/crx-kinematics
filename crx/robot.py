@@ -73,12 +73,12 @@ class Robot:
 
     def plot(self, helper: PyvistaPlotterHelper, opacity: float = 0.5):
         for actor in self._actors:
-            helper.plotter.remove_actor(actor)
+            helper.pv.remove_actor(actor)
         self._actors.clear()
 
         colors = ["gray", "white", "white", "white", "white", "white", "gray"]
         for mesh, c in zip(self.posed_meshes(), colors):
-            actor = helper.add_mesh(mesh, color=c, opacity=opacity)
+            actor = helper.mesh(mesh, color=c, opacity=opacity)
             self._actors.append(actor)
 
     def posed_meshes(self):

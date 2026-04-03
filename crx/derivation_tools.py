@@ -55,15 +55,17 @@ def optional_axis_label(helper: MatplotlibAxesHelper, working_iso: Iso3, view_is
     x_view = view_iso @ x_label
     y_view = view_iso @ y_label
     z_view = view_iso @ z_label
+    origin_view = view_iso @ working_iso @ Point3(0, 0, 0)
 
     if _visible(x_view):
-        helper.arrow([0.0, 0.0], x_view.to_2d(), color="red", linewidth=2.0)
+
+        helper.arrow(origin_view.to_2d(), x_view.to_2d(), color="red", linewidth=2.0)
         helper.text(" $x$ ", x_view.to_2d(), color="red", fontsize=14)
     if _visible(y_view):
-        helper.arrow([0.0, 0.0], y_view.to_2d(), color="green", linewidth=2.0)
+        helper.arrow(origin_view.to_2d(), y_view.to_2d(), color="green", linewidth=2.0)
         helper.text(" $y$ ", y_view.to_2d(), color="green", fontsize=14)
     if _visible(z_view):
-        helper.arrow([0.0, 0.0], z_view.to_2d(), color="blue", linewidth=2.0)
+        helper.arrow(origin_view.to_2d(), z_view.to_2d(), color="blue", linewidth=2.0)
         helper.text(" $z$ ", z_view.to_2d(), color="blue", fontsize=14)
 
 
