@@ -1,15 +1,131 @@
+import numpy
+import math
 from crx.robot import Robot
+from engeom.geom2 import Circle2, Point2
+from engeom.geom3 import Circle3, Iso3, Plane3, Sphere3, Point3, Vector3, Line3
+from engeom.plot import PyvistaPlotterHelper
+from tqdm import tqdm
 
-from engeom.geom3 import Circle3, Iso3, Plane3
+from derivations.initial_workup_3d import intersections
 
 
+def main():
+    robot = Robot.crx10ia()
+    random_joints = numpy.random.uniform(-180, 180, size=(2000000, 6))
 
-def reduced_problem(robot: Robot, circle_o4: Circle3, radius_o3: float, iso_reduced: Iso3):
-    # The torus equivalence: the O4 circle can only reach the O3 circle where it is within the `x1` distance of at
-    # least one of its points. The volume that is reachable from the O3 circle is a torus with a major radius of the
-    # O3 circle diameter and a minor dimension of `x1`.
+    for j in tqdm(random_joints):
+        robot.set_joints(j)
+        point_o5 = robot.frame_origin(4)
+        frame_o6 = robot.frames[5]
+
+        # The o3 sphere is the set of points that satisfy the o5 -> o4 -> o3 constraint. Imagine the flange is fixed in
+        # space at the target position. The o4 joint spins like a propeller, rotating o3 around o4 like a propeller. Then,
+        # while this is happening, the wrist joint rotates its full 360 degrees. The full set of points that o3 sweeps
+        # through is the o3 sphere.
+        s3 = Sphere3(*point_o5, math.sqrt(robot.y1 ** 2 + robot.x1 ** 2))
+
+        # The o1 sphere is the set of points that o3 can reach just by the first two joints moving through all of their
+        # various configurations
+        s1 = Sphere3(*Point3.origin(), radius=robot.z1)
+
+        # The o3 circle is the set of points at the intersection of the o3 sphere and the o1 sphere
+        c3 = s3.intersect_sphere(s1)
+        c3_o5 = point_o5 - c3.center
+
+        # This is the candidate o4 circle, consisting of all the points where the o4 center could be if the flange
+        # rotates through its full 360-degree sweep. If the normal points in the opposite direction as c3_o5 we'll
+        # flip the normal.
+        c4 = Circle3(*point_o5, *frame_o6.z_direction, robot.y1)
+        if c4.normal.dot(c3_o5) < 0:
+            c4.flip_normal()
+
+        # Find the point closest to the o3 circle plane
+        z_minus = c3.center - point_o5  # Get the new -z direction
+        theta = c4.max_extent_angle(*z_minus)  # Get the angle of the "lowest" point in the circle
+        x_plus = c4.at_angle(theta).point - c4.center
+
+        # Now we'll get the transformation to the reduced problem space. The origin will be at the center of C3, the
+        # x direction points towards the lowest point of the circle, and the Z direction points from C3 to C4.
+        # TODO: Check for and handle parallel or perpendicular circles
+        reduced = Iso3.from_basis_xz(c3.plane.project_vector(x_plus), -z_minus, c3.center)
+
+        # Extract reduced problem parameters
+        r_3 = c3.r
+        h = c3_o5.norm()
+        y1 = robot.y1
+        x1 = robot.x1
+        phi = c3_o5.angle(c4.normal)
+
+        points = reduced_problem(r_3, h, y1, x1, phi, reduced)[:, :3]
+
+        # plot = PyvistaPlotterHelper.with_new_plotter(window_size=(1000, 1000))
+        # plot.circle(c4, edge_color="red", face_color=None)
+        # plot.circle(c3, edge_color="blue", face_color=None)
+        # plot.pv.add_points(reduced.transform_points(points), color="green", point_size=10)
+        # plot.coordinate_frame(Iso3.identity(), size=100)
+        # plot.show()
+
+
+def reduced_problem(r_3: float, h: float, y1: float, x1: float, phi: float, iso_reduced: Iso3):
+    # We'll create the C4 circle at the origin so that we can clock its theta, then we'll pitch it by phi and
+    # lift it up by h
+    c4_at_origin = Circle3(0, 0, 0, 0, 0, 1, y1)
+    angle_x = c4_at_origin.max_extent_angle(1, 0, 0)
+    c4_at_origin.set_zero_angle(angle_x)
+    c4 = Iso3.from_translation(0, 0, h) @ Iso3.from_ry(phi) @ c4_at_origin
+
+    # We'll perform some orientation assertions to make sure the C4 circle is oriented correctly
+    c4_orientation_check(c4)
+
+    # The C3 circle is just a circle at the origin with radius r_3
+    c3 = Circle3(0, 0, 0, 0, 0, 1, r_3)
+
+    # Now we're going to perform the toroid equivalent check to see if we need to clip C4
+    upr, lwr = toroid_equiv(h, r_3, x1, y1)
+
+    # plot = PyvistaPlotterHelper.with_new_plotter(window_size=(1000, 1000))
+    # plot.circle(c4, edge_color="red", face_color=None)
+    # plot.circle(c3, edge_color="blue", face_color=None)
+    # plot.coordinate_frame(Iso3.identity(), size=100)
+    # plot.show()
     #
-    # Figuring out which parts of the O4 circle are within this torus turns out to be straightforward because
-    # the problem is almost axisymmetric. The
-    pass
+    return c4.at_angles(numpy.linspace(0, 2 * numpy.pi, 100))
 
+
+def toroid_equiv(h: float, r_3: float, x1: float, y1: float):
+    # To do the toroid equivalent check, we'll start with the original sphere that C4 is a subset of, making the
+    # check entirely axisymmetric. We imagine any cross-section of the donut and the sphere through the Z axis. The
+    # sphere is a 2d circle sitting at z=h and with radius y1. The donut D is a circle of radius x1 centered at
+    # (r_3, 0).
+    d = Circle2(r_3, 0, x1)
+    s4 = Circle2(0, h, y1)
+    intr = d.intersections_with(s4)
+    if len(intr) > 0:
+        intr.sort(key=lambda p: p.y)
+
+    # If the topmost point of S4 is inside the circle, the entirety of C4 is reachable from C3. However, if it isn't,
+    # all points of C4 above the z value of the topmost intersection of S4 and D are unreachable.
+    upper_limit = None
+    if not d.contains_point(0, h + y1):
+        upper_limit = intr[-1].y
+
+    lower_limit = None
+    if not d.contains_point(0, h - y1):
+        print("FOUND ONE!")
+        lower_limit = intr[0].y
+
+    return upper_limit, lower_limit
+
+
+def c4_orientation_check(c4: Circle3):
+    # Check that the clocking of the C4 circle is correct. The point at theta=0 should have a positive x component, no
+    # y component, and a z component that is less than or equal to the point at theta=pi
+
+    p = c4.at_angle(0).point
+    assert abs(p.y) < 1e-6
+    assert abs(p.x) > -1e-6
+    assert p.z <= c4.at_angle(math.pi).point.z
+
+
+if __name__ == '__main__':
+    main()
