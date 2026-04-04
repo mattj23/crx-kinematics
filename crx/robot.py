@@ -6,6 +6,91 @@ from pathlib import Path
 _mesh_path = Path(__file__).parent / "meshes"
 
 
+class RobotKinematics:
+    def __init__(self, z1: float, x1: float, x2: float, y1: float):
+        """
+
+        :param z1: The height from the J2 axis to the J3 axis
+        :param x1: The length from the J3 axis to the J5 axis
+        :param x2: The length from the J5 axis to the robot flange
+        :param y1: The offset between the J1 and J6 axes
+        """
+        self.z1 = z1
+        self.x1 = x1
+        self.x2 = x2
+        self.y1 = y1
+
+        self.h = numpy.array([
+            [0.0, 0.0, 0.0, -1.0, 0.0, -1.0],
+            [0.0, 1.0, -1.0, 0.0, -1.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        ])
+
+        self.p = numpy.zeros(shape=(3, 7), dtype=float)
+        self.p[2, 2] = z1
+        self.p[0, 4] = x1
+        self.p[1, 4] = -y1
+        self.p[0, 5] = x2
+
+        self._joint_radians = [0.0] * 6
+        self._frames = None
+        self._actors = []
+
+    @property
+    def frames(self) -> list[Iso3]:
+        if self._frames is None:
+            self._frames = self._calc_frames()
+        return self._frames
+
+    def _calc_frames(self) -> list[Iso3]:
+        f1 = Iso3.from_rotation(self._joint_radians[0], self.h[0, 0], self.h[1, 0], self.h[2, 0])
+        f2 = f1 @ self._frame_link(1)
+        f3 = f2 @ self._frame_link(2)
+        f4 = f3 @ self._frame_link(3)
+        f5 = f4 @ self._frame_link(4)
+        f6 = f5 @ self._frame_link(5) @ fanuc_end()
+
+        return [f1, f2, f3, f4, f5, f6]
+
+    def frame_origin(self, i: int) -> Point3:
+        if i == 3:
+            f = self.frames[3] @ Iso3.from_translation(self.x1, 0, 0)
+        else:
+            f = self.frames[i]
+
+        return f @ Point3(0, 0, 0)
+
+    def _frame_link(self, i: int) -> Iso3:
+        return (Iso3.from_translation(*self.p[:, i].flatten()) @
+                Iso3.from_rotation(self._joint_radians[i], self.h[0, i], self.h[1, i], self.h[2, i]))
+
+    def set_joints(self, degrees: list[float]):
+        if len(degrees) != 6:
+            raise ValueError("Degrees must be a list of 6 elements")
+        self._joint_radians = _joints_to_radians(degrees)
+        self._frames = None
+
+    @staticmethod
+    def crx5ia():
+        return RobotKinematics(410, 430, 145, 130)
+
+    @staticmethod
+    def crx10ia():
+        return RobotKinematics(540, 540, 160, 150)
+
+    @staticmethod
+    def crx10ial():
+        return RobotKinematics(710, 540, 160, 150)
+
+    @staticmethod
+    def crx20ial():
+        return RobotKinematics(710, 540, 160, 150)
+
+    @staticmethod
+    def crx30ia():
+        return RobotKinematics(950, 750, 180, 185)
+
+
 class Robot:
     def __init__(self, z1: float, x1: float, x2: float, y1: float, prefix: str):
         """
