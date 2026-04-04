@@ -3,7 +3,7 @@ import math
 from crx.robot import Robot, RobotKinematics
 from engeom.geom2 import Circle2, Point2, signed_angle
 from engeom.geom3 import Circle3, Iso3, Plane3, Sphere3, Point3, Vector3, Line3
-from engeom.plot import PyvistaPlotterHelper
+from engeom.plot import PyvistaPlotterHelper, TraceBuilder
 from tqdm import tqdm
 
 from derivations.initial_workup_3d import intersections
@@ -12,9 +12,12 @@ from derivations.initial_workup_3d import intersections
 def main():
     random_joints = numpy.random.uniform(-180, 180, size=(20_000, 6))
     robots = [RobotKinematics.crx5ia(), RobotKinematics.crx10ia(), RobotKinematics.crx10ial(), RobotKinematics.crx30ia()]
+
+    process(robots[2], random_joints)
+
     # robot = RobotKinematics.crx10ial()
-    for robot in robots:
-        process(robot, random_joints)
+    # for robot in robots:
+    #     process(robot, random_joints)
 
 def process(robot: RobotKinematics, random_joints: numpy.ndarray):
     for j in tqdm(random_joints):
@@ -90,35 +93,73 @@ def reduced_problem(r_3: float, h: float, y1: float, x1: float, phi: float, iso_
     upr_theta = c4_limit_check(upr, c4, math.pi)
     lwr_theta = c4_limit_check(lwr, c4, 0.0)
 
+    # Get the relevant O4 candidates
     angles = numpy.linspace(upr_theta, lwr_theta, 500)
-    points = c4.at_angles(angles)
+    cand_o4 = c4.at_angles(angles)
 
     # Perform the intersection
-    results = []
-    for row in points:
+    trace_cw = TraceBuilder()
+    trace_ccw = TraceBuilder()
+    cand_o3_cw = []
+    cand_o3_ccw = []
+    for row in cand_o4:
         plane = Plane3.from_point_normal(*row[:6])
-        center_vector = Vector3(*row[3:6]).to_2d()
-
         intr = c3.intersect_plane(plane)
+        intr_points = [c3.at_angle(t).point.coords for t in intr]
+
+        # assert len(intr) > 0
         if len(intr) == 0:
+            # display_reduced(c3, c4, cand_o4)
             continue
 
-        intr_points = [c3.at_angle(t).point.coords for t in intr]
-        angles = sorted([signed_angle(center_vector, x.to_2d()) for x in intr_points])
-        assert abs(sum(angles)) < 1e-6
+        # There will now be either 1 or 2 intersections. If there is only one, we will add it to both the clockwise
+        # and counter-clockwise lists. If there are two, we'll identify cw and ccw and then add the appropriate
+        # point to each list.
+        if len(intr_points) == 1:
+            cand_o3_cw.append(intr_points[0])
+            cand_o3_ccw.append(intr_points[0])
+            trace_cw.add_segment(row[:3], intr_points[0])
+            trace_ccw.add_segment(row[:3], intr_points[0])
+        else:
+            center_vector = Vector3(*row[3:6]).to_2d()
+            if signed_angle(center_vector, intr_points[0].to_2d()) < 0:
+                cand_o3_cw.append(intr_points[0])
+                cand_o3_ccw.append(intr_points[1])
+                trace_cw.add_segment(row[:3], intr_points[0])
+                trace_ccw.add_segment(row[:3], intr_points[1])
+            else:
+                cand_o3_cw.append(intr_points[1])
+                cand_o3_ccw.append(intr_points[0])
+                trace_cw.add_segment(row[:3], intr_points[1])
+                trace_ccw.add_segment(row[:3], intr_points[0])
+
+        # This is a check to make sure that they are indeed symmetrical around the projected center vector, which a
+        # stress test on every robot seemed to confirm
+        # angles = sorted([signed_angle(center_vector, x.to_2d()) for x in intr_points])
+        # assert abs(sum(angles)) < 1e-6
+
         # print(angles)
-
     # results = numpy.array(results)
+    plot = PyvistaPlotterHelper.with_new_plotter(window_size=(1000, 1000))
+    plot.circle(c4, edge_color="red", face_color=None)
+    plot.circle(c3, edge_color="blue", face_color=None)
+    plot.pv.add_lines(cand_o4[:, :3], connected=True, color="green", width=10)
+    plot.pv.add_lines(trace_cw., color="purple")
+    plot.coordinate_frame(Iso3.identity(), size=100)
+    plot.show()
 
-    # plot = PyvistaPlotterHelper.with_new_plotter(window_size=(1000, 1000))
-    # plot.circle(c4, edge_color="red", face_color=None)
-    # plot.circle(c3, edge_color="blue", face_color=None)
-    # plot.pv.add_lines(points[:, :3], connected=True, color="green", width=10)
-    # plot.coordinate_frame(Iso3.identity(), size=100)
-    # plot.pv.add_points(results, color="orange", point_size=10, render_points_as_spheres=True)
-    # plot.show()
 
-    return points
+    raise NotImplementedError()
+
+    return cand_o4
+
+def display_reduced(c3: Circle3, c4: Circle3, cand_o4: numpy.ndarray):
+    plot = PyvistaPlotterHelper.with_new_plotter(window_size=(1000, 1000))
+    plot.circle(c4, edge_color="red", face_color=None)
+    plot.circle(c3, edge_color="blue", face_color=None)
+    plot.pv.add_lines(cand_o4[:, :3], connected=True, color="green", width=10)
+    plot.coordinate_frame(Iso3.identity(), size=100)
+    plot.show()
 
 
 def c4_limit_check(value: float | None, c4: Circle3, default_value: float) -> float:
