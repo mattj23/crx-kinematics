@@ -44,16 +44,19 @@ The robot's kinematics can be represented with four unique parameters, which are
 | Distance from $O_4$ to $O_5$ | `y1`            |
 | Distance from $O_5$ to $O_6$ | `x2`            |
 
-Because the entire CRX family has the same kinematic layout, the difference in modeling them is only the variation in the four parameters. The following table contains the parameters for the full family.  Be aware that the CR-35iA is not a member of the CRX family, but rather has spherical wrist kinematics like non-collaborative robots in Fanuc's product catalogue.
+Because the entire CRX family has the same kinematic layout, the difference in modeling them is only the variation in the four parameters. The following table contains the parameters for the full family.  Be aware that the CR-35iA is not a member of the CRX family, but rather has spherical wrist kinematics like non-collaborative robots in Fanuc's product catalogue. 
 
 | Robot      | J2 -> J3 (`z1`) | J3 -> J5 (`x1`) | J5 -> Flange (`x2`) | J1 -> J6 (`y1`) |
 |------------|-----------------|-----------------|---------------------|-----------------|
+| CRX-3iA    | 280             | 280             | 123                 | 111             |
 | CRX-5iA    | 410             | 430             | 145                 | 130             |
 | CRX-10iA   | 540             | 540             | 160                 | 150             |
 | CRX-10iA/L | 710             | 540             | 160                 | 150             |
-| CRX-10iA/L | 710             | 540             | 160                 | 150             |
 | CRX-20iA/L | 710             | 540             | 160                 | 150             |
 | CRX-30iA   | 950             | 750             | 180                 | 185             |
+
+> [!NOTE]
+> The CRX-10iA/L and the CRX-20iA/L have the same kinematic parameters; that is not a mistake.
 
 --- 
 

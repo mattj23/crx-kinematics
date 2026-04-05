@@ -4,6 +4,22 @@ pub use engeom::na;
 use engeom::{Iso3, Point3, Vector3, Result};
 use crate::na::{try_convert, Matrix3, Matrix4, Translation, Translation3, UnitQuaternion};
 
+pub enum IkResult<T> {
+    Ok(T),
+    NoReach,
+    Singularity,
+}
+
+/// The different models in the FANUC CRX series of collaborative robots.
+pub enum CrxModel {
+    Crx3iA,
+    Crx5iA,
+    Crx10iA,
+    Crx10iAL,
+    Crx20iAL,
+    Crx30iA,
+}
+
 /// Entity for the CRX series of collaborative robots. These are non-spherical wrist robots with
 /// three parallel axes. The entire series (as of Q1 2025) has the same kinematic structure and
 /// differs only in the lengths of the different links.
@@ -21,6 +37,26 @@ pub struct Crx {
 }
 
 impl Crx {
+    /// Returns the height from the J2 axis to the J3 axis (e.g. 410mm on the CRX-5iA).
+    pub fn z1(&self) -> f64 {
+        self.z1
+    }
+
+    /// Returns the length from the J3 axis to the J5 axis (e.g. 430mm on the CRX-5iA).
+    pub fn x1(&self) -> f64 {
+        self.x1
+    }
+
+    /// Returns the length from the J5 axis to the robot flange (e.g. 145mm on the CRX-5iA).
+    pub fn x2(&self) -> f64 {
+        self.x2
+    }
+
+    /// Returns the offset from the J1 axis to the J2 axis (e.g. 130mm on the CRX-5iA).
+    pub fn y1(&self) -> f64 {
+        self.y1
+    }
+
     /// Internal constructor for the CRX series of robots.
     ///
     /// # Arguments
@@ -43,6 +79,18 @@ impl Crx {
         ];
 
         Self { z1, x1, x2, y1, h }
+    }
+
+    /// Creates a new robot of the specified model.
+    pub fn from_model(model: CrxModel) -> Self {
+        match model {
+            CrxModel::Crx3iA => Self::new_3ia(),
+            CrxModel::Crx5iA => Self::new_5ia(),
+            CrxModel::Crx10iA => Self::new_10ia(),
+            CrxModel::Crx10iAL => Self::new_10ia_l(),
+            CrxModel::Crx20iAL => Self::new_20ia_l(),
+            CrxModel::Crx30iA => Self::new_30ia(),
+        }
     }
 
     /// Creates a new CRX-3iA robot
@@ -218,9 +266,28 @@ pub fn row_slice_to_iso(slice: &[f64]) -> Result<Iso3> {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use approx::assert_relative_eq;
+    use rand::RngExt;
+
+    /// Returns one instance of each robot model in the CRX series.
+    pub fn all_robots() -> [Crx; 6] {
+        [
+            Crx::from_model(CrxModel::Crx3iA),
+            Crx::from_model(CrxModel::Crx5iA),
+            Crx::from_model(CrxModel::Crx10iA),
+            Crx::from_model(CrxModel::Crx10iAL),
+            Crx::from_model(CrxModel::Crx20iAL),
+            Crx::from_model(CrxModel::Crx30iA),
+        ]
+    }
+
+    /// Generates a random set of joint angles where each value is between -180 and 180 degrees.
+    pub fn random_joints() -> [f64; 6] {
+        let mut rng = rand::rng();
+        std::array::from_fn(|_| rng.random_range(-180.0..=180.0))
+    }
 
     #[test]
     fn zero_position() -> Result<()> {
