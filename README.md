@@ -31,11 +31,11 @@ With FANUC robots, like most industrial arms, there are multiple joint configura
 
 Consider the following diagram of a CRX-10iA robot, showing the general links and joints. The robot base is fixed, and the robot's internal kinematics set the world origin as the intersection of the $\overrightarrow{J_1}$ and $\overrightarrow{J_2}$ axes, which yields some mathematical niceties.
 
-![CRX-10iA](images/links_and_joints.png)
+![CRX-10iA](derivation/images/links_and_joints.png)
 
 The robot's kinematics can be represented with four unique parameters, which are the distances between the robot's kinematic link origins.  The origins are points in the robot's world coordinate system and are labeled $O_1$ through $O_6$. Point $O_1$ is always at $(0, 0, 0)$ regardless of what the joints do, and $O_6$ is at the intersection of $\overrightarrow{J_6}$ and the robot flange. The other origins are located at the intersection of the different axes.
 
-![CRX-10iA](images/parameters.png)
+![CRX-10iA](derivation/images/parameters.png)
 
 | Kinematic Parameter          | Model Parameter |
 |------------------------------|-----------------|
