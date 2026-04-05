@@ -1,7 +1,8 @@
-.idea/
-.venv/
-__pycache__/
-build/
+*/.idea/
+*/.venv/
+*/__pycache__/
+*/build/
+*/target/
 
 *.pyc
 

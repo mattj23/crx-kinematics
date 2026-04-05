@@ -1,0 +1,12 @@
+[package]
+name = "py-fanuc-crx-ik"
+version.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "py_fanuc_crx_ik"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = "0.28.3"

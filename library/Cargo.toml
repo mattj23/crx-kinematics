@@ -1,0 +1,10 @@
+[workspace]
+resolver = "3"
+members = ["fanuc-crx-ik", "py-fanuc-crx-ik"]
+
+[workspace.package]
+version = "0.1.1"
+edition = "2024"
+
+[workspace.dependencies]
+engeom = "0.3.0"
