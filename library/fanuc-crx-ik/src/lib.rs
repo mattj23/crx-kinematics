@@ -1,3 +1,5 @@
+pub mod internals;
+
 pub use engeom::na;
 use engeom::{Iso3, Point3, Vector3, Result};
 use crate::na::{try_convert, Matrix3, Matrix4, Translation, Translation3, UnitQuaternion};
@@ -43,13 +45,34 @@ impl Crx {
         Self { z1, x1, x2, y1, h }
     }
 
+    /// Creates a new CRX-3iA robot
+    pub fn new_3ia() -> Self {
+        Self::new(280.0, 280.0, 123.0, 111.0)
+    }
+
     /// Creates a new CRX-5iA robot
     pub fn new_5ia() -> Self {
         Self::new(410.0, 430.0, 145.0, 130.0)
     }
 
+    /// Creates a new CRX-10iA robot
     pub fn new_10ia() -> Self {
         Self::new(540.0, 540.0, 160.0, 150.0)
+    }
+
+    /// Creates a new CRX-10iA/L robot
+    pub fn new_10ia_l() -> Self {
+        Self::new(710.0, 540.0, 160.0, 150.0)
+    }
+
+    /// Creates a new CRX-20iA/L robot
+    pub fn new_20ia_l() -> Self {
+        Self::new(710.0, 540.0, 160.0, 150.0)
+    }
+
+    /// Creates a new CRX-30iA robot
+    pub fn new_30ia() -> Self {
+        Self::new(950.0, 750.0, 180.0, 185.0)
     }
 
     /// Compute the forward kinematics of a series of joint angles for the CRX series of robots.
