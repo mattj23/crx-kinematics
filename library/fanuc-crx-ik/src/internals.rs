@@ -72,11 +72,17 @@ pub fn get_point_o5(robot: &Crx, target: &Iso3) -> Point3 {
     point_o5
 }
 
+pub fn get_circle_c4(robot: &Crx, target: &Iso3) -> Circle3 {
+    let c4_iso = target * Iso3::translation(0.0, 0.0, -robot.x2());
+    Circle3::new(robot.y1(), c4_iso)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use approx::assert_relative_eq;
     use crate::tests::{all_robots, random_joints};
+    use approx::assert_relative_eq;
+    use engeom::common::points::dist;
 
     #[test]
     fn crx_5ia_zero_o5() {
@@ -104,5 +110,36 @@ mod tests {
         }
     }
 
+    fn get_o4(robot: &Crx, joints: &[f64; 6]) -> Point3 {
+        let all_frames = robot.fk_all(joints);
+        all_frames[3] * Point3::new(robot.x1(), 0.0, 0.0)
+    }
 
+    #[test]
+    fn crx_5ia_zero_o4() {
+        let robot = Crx::new_5ia();
+        let joints = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
+        let expected_o4 = Point3::new(430.0, 0.0, 410.0);
+        let check_o4 = get_o4(&robot, &joints);
+        assert_relative_eq!(expected_o4, check_o4, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn stress_check_circle_c4() {
+        for _ in 0..1000 {
+            for robot in all_robots() {
+                let joints = random_joints();
+                let all_frames = robot.fk_all(&joints);
+
+                let target = all_frames[5];
+                let c4 = get_circle_c4(&robot, &target);
+                let o4 = get_o4(&robot, &joints);
+
+                let closest = c4.closest_position(&o4).point;
+                let d = dist(&o4, &closest);
+                assert!(d < 1e-10, "Distance is {}", d);
+            }
+        }
+    }
 }

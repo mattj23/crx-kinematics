@@ -1,8 +1,8 @@
 pub mod internals;
 
+use crate::na::{Matrix3, Matrix4, Translation, Translation3, UnitQuaternion, try_convert};
 pub use engeom::na;
-use engeom::{Iso3, Point3, Vector3, Result};
-use crate::na::{try_convert, Matrix3, Matrix4, Translation, Translation3, UnitQuaternion};
+use engeom::{Iso3, Point3, Result, Vector3};
 
 pub enum IkResult<T> {
     Ok(T),
@@ -236,7 +236,6 @@ fn rad_to_joints(rad_joints: &[f64]) -> [f64; 6] {
     joints[2] -= joints[1];
     joints
 }
-
 
 pub fn parts_to_iso(rot: Matrix3<f64>, trans: Vector3) -> Iso3 {
     let r = UnitQuaternion::from_matrix(&rot);
