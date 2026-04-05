@@ -94,45 +94,47 @@ def reduced_problem(r_3: float, h: float, y1: float, x1: float, phi: float, iso_
     lwr_theta = c4_limit_check(lwr, c4, 0.0)
 
     # Get the relevant O4 candidates
-    angles = numpy.linspace(upr_theta, lwr_theta, 500)
+    angles = numpy.linspace(upr_theta, lwr_theta, 1000)
     cand_o4 = c4.at_angles(angles)
 
     # Perform the intersection
-    trace_cw = TraceBuilder()
-    trace_ccw = TraceBuilder()
     cand_o3_cw = []
     cand_o3_ccw = []
-    for row in cand_o4:
+    for t, row in zip(angles, cand_o4):
+        # cand_o3_cw[i, :3] = row[:3]
+        # cand_o3_ccw[i, :3] = row[:3]
+
         plane = Plane3.from_point_normal(*row[:6])
         intr = c3.intersect_plane(plane)
         intr_points = [c3.at_angle(t).point.coords for t in intr]
 
         # assert len(intr) > 0
         if len(intr) == 0:
+            print(t)
             # display_reduced(c3, c4, cand_o4)
             continue
 
         # There will now be either 1 or 2 intersections. If there is only one, we will add it to both the clockwise
         # and counter-clockwise lists. If there are two, we'll identify cw and ccw and then add the appropriate
         # point to each list.
-        if len(intr_points) == 1:
-            cand_o3_cw.append(intr_points[0])
-            cand_o3_ccw.append(intr_points[0])
-            trace_cw.add_segment(row[:3], intr_points[0])
-            trace_ccw.add_segment(row[:3], intr_points[0])
-        else:
-            center_vector = Vector3(*row[3:6]).to_2d()
-            if signed_angle(center_vector, intr_points[0].to_2d()) < 0:
-                cand_o3_cw.append(intr_points[0])
-                cand_o3_ccw.append(intr_points[1])
-                trace_cw.add_segment(row[:3], intr_points[0])
-                trace_ccw.add_segment(row[:3], intr_points[1])
-            else:
-                cand_o3_cw.append(intr_points[1])
-                cand_o3_ccw.append(intr_points[0])
-                trace_cw.add_segment(row[:3], intr_points[1])
-                trace_ccw.add_segment(row[:3], intr_points[0])
-
+        # if len(intr_points) == 1:
+        #     cand_o3_cw.append(intr_points[0])
+        #     cand_o3_ccw.append(intr_points[0])
+        #     trace_cw.add_segment(row[:3], intr_points[0])
+        #     trace_ccw.add_segment(row[:3], intr_points[0])
+        # else:
+        #     center_vector = Vector3(*row[3:6]).to_2d()
+        #     if signed_angle(center_vector, intr_points[0].to_2d()) < 0:
+        #         cand_o3_cw.append(intr_points[0])
+        #         cand_o3_ccw.append(intr_points[1])
+        #         trace_cw.add_segment(row[:3], intr_points[0])
+        #         trace_ccw.add_segment(row[:3], intr_points[1])
+        #     else:
+        #         cand_o3_cw.append(intr_points[1])
+        #         cand_o3_ccw.append(intr_points[0])
+        #         trace_cw.add_segment(row[:3], intr_points[1])
+        #         trace_ccw.add_segment(row[:3], intr_points[0])
+        #
         # This is a check to make sure that they are indeed symmetrical around the projected center vector, which a
         # stress test on every robot seemed to confirm
         # angles = sorted([signed_angle(center_vector, x.to_2d()) for x in intr_points])
@@ -140,16 +142,16 @@ def reduced_problem(r_3: float, h: float, y1: float, x1: float, phi: float, iso_
 
         # print(angles)
     # results = numpy.array(results)
-    plot = PyvistaPlotterHelper.with_new_plotter(window_size=(1000, 1000))
-    plot.circle(c4, edge_color="red", face_color=None)
-    plot.circle(c3, edge_color="blue", face_color=None)
-    plot.pv.add_lines(cand_o4[:, :3], connected=True, color="green", width=10)
-    plot.pv.add_lines(trace_cw., color="purple")
-    plot.coordinate_frame(Iso3.identity(), size=100)
-    plot.show()
-
-
-    raise NotImplementedError()
+    # plot = PyvistaPlotterHelper.with_new_plotter(window_size=(1000, 1000))
+    # plot.circle(c4, edge_color="red", face_color=None)
+    # plot.circle(c3, edge_color="blue", face_color=None)
+    # plot.pv.add_lines(cand_o4[:, :3], connected=True, color="green", width=10)
+    # plot.pv.add_lines(trace_cw., color="purple")
+    # plot.coordinate_frame(Iso3.identity(), size=100)
+    # plot.show()
+    #
+    #
+    # raise NotImplementedError()
 
     return cand_o4
 

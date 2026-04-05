@@ -102,4 +102,9 @@ There are a few more things that we can consider:
   - The bounds of $\theta$ can be found with plane intersections equivalent to a volume intersection of a torus with major radius $r_3$ and minor radius $x_1$ against the surface of sphere $\mathcal{S}_4$.
   - The bounds of circle $\mathcal{C}_3$ can be found by doing plane intersections offset from $\mathcal{C}_4$ by $\pm x_1$.
 
+#### Implementation Notes
+
+- Start with creating the two circles
+- Do the toroidal equivalence to check limits on $\mathcal{C}_4$
+    - Note that all eliminated parts of $\mathcal{C}_4$ cannot intersect, but not all parts that cannot intersect are eliminated. I think(?) this gets the top limits exactly, but it definitely does not get the bottom.
 
