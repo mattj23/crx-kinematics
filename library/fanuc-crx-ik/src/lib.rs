@@ -219,24 +219,6 @@ fn joints_to_rad(joints: &[f64]) -> [f64; 6] {
     rad_joints
 }
 
-/// Convert kinematic joint angles from radians to degrees, including the J2/J3 interaction quirk.
-/// The result will be a set of angles in degrees as they would be displayed in the FANUC
-/// controller.
-///
-/// # Arguments
-///
-/// * `rad_joints`: a slice of 6 joint angles in radians as they would be in the kinematic model
-///
-/// returns: [f64; 6]
-fn rad_to_joints(rad_joints: &[f64]) -> [f64; 6] {
-    let mut joints = [0.0; 6];
-    for (i, j) in rad_joints.iter().enumerate() {
-        joints[i] = j.to_degrees();
-    }
-    joints[2] -= joints[1];
-    joints
-}
-
 pub fn parts_to_iso(rot: Matrix3<f64>, trans: Vector3) -> Iso3 {
     let r = UnitQuaternion::from_matrix(&rot);
     let t = Translation3::from(trans);
