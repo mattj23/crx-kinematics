@@ -1,15 +1,12 @@
 //! This module contains the tools to go backwards from a valid O3/O4 pair to the joint angles
 //! of the solution which created it.
 
-use crate::{end_adjust, Crx};
-use engeom::{Point3, Iso3, Vector3};
-use crate::internals::reduced::get_point_o5;
+use crate::internals::get_point_o5;
+use crate::{Crx, end_adjust};
+use engeom::{Iso3, Point3, Vector3};
 
 /// Given a robot configuration and a known valid pair of (O3, O4) points, calculate the angles of
-/// the individual joint/frame rotations in radians.  This will then have to be converted to
-/// degrees and the J2/J3 interaction accounted for.
-///
-/// To convert this to degrees, use `rad_to_joints`.
+/// the individual joint/frame rotations.
 ///
 /// # Arguments
 ///
@@ -19,7 +16,7 @@ use crate::internals::reduced::get_point_o5;
 /// * `iso`: the orientation of the end effector in the robot's local coordinate system
 ///
 /// returns: [f64; 6]
-pub fn calc_joint_radians(robot: &Crx, o3: &Point3, o4: &Point3, iso: &Iso3) -> [f64; 6] {
+pub fn calc_joint_degrees(robot: &Crx, o3: &Point3, o4: &Point3, iso: &Iso3) -> [f64; 6] {
     let mut joints = [0.0; 6];
     let o6 = iso * Point3::origin();
     let o5 = get_point_o5(robot, iso);
@@ -61,6 +58,58 @@ pub fn calc_joint_radians(robot: &Crx, o3: &Point3, o4: &Point3, iso: &Iso3) -> 
     // Calculate J6
     joints[5] = -o6_ztest.y.atan2(o6_ztest.x);
 
+    rad_to_joints(&joints)
+}
+
+/// Convert kinematic joint angles in radians back to degrees in FANUC controller convention,
+/// accounting for the J2/J3 coupling.
+pub fn rad_to_joints(rad_joints: &[f64; 6]) -> [f64; 6] {
+    let mut joints = rad_joints.map(|r| r.to_degrees());
+    joints[2] -= joints[1];
     joints
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::internals::tests::{get_o3, get_o4};
+    use crate::tests::{all_robots, random_joints};
+    use approx::assert_relative_eq;
+    use engeom::na::Vector6;
+
+    #[test]
+    fn recover_zero_joints() {
+        let robot = Crx::new_5ia();
+        let joints = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let target = robot.fk(&joints);
+
+        let o3 = get_o3(&robot, &joints);
+        let o4 = get_o4(&robot, &joints);
+
+        let result = calc_joint_degrees(&robot, &o3, &o4, &target);
+
+        assert_relative_eq!(
+            Vector6::from_column_slice(&joints),
+            Vector6::from_column_slice(&result),
+            epsilon = 1e-12
+        );
+    }
+
+    #[test]
+    fn stress_test_recover_joints() {
+        for robot in all_robots() {
+            for _ in 0..1000 {
+                let joints = random_joints();
+                let target = robot.fk(&joints);
+                let o3 = get_o3(&robot, &joints);
+                let o4 = get_o4(&robot, &joints);
+                let result = calc_joint_degrees(&robot, &o3, &o4, &target);
+                assert_relative_eq!(
+                    Vector6::from_column_slice(&joints),
+                    Vector6::from_column_slice(&result),
+                    epsilon = 1e-10
+                );
+            }
+        }
+    }
+}
