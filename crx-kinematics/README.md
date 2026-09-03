@@ -50,7 +50,7 @@ axis, which an operator can enter directly and which defeats other implementatio
 architecture. They are enumerated with their treatment in
 [the derivation](https://github.com/mattj23/crx-kinematics/blob/main/docs/LINEAR_METHOD.md#degenerate-configurations),
 along with
-[two configurations the method cannot recover](https://github.com/mattj23/crx-kinematics/blob/main/docs/LINEAR_METHOD.md#what-the-method-cannot-do),
+[two configurations the method cannot recover](https://github.com/mattj23/crx-kinematics/blob/main/docs/LINEAR_METHOD.md#unrecoverable-configurations),
 both of which place the wrist center inside the robot's own base casting.
 
 Python bindings are published separately as
