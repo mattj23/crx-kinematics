@@ -163,8 +163,9 @@ two postures each give the literature's bound of sixteen.
 
 **The roots come from an ordinary polynomial solve.** Because the degree is known, sixteen samples
 of $f$ recover its Fourier coefficients exactly. A half-angle substitution turns it into a real
-polynomial of degree eight, whose roots are the eigenvalues of an 8x8 companion matrix. The method
-uses neither bracketing nor root sampling, so it cannot lose a root between samples.
+polynomial of degree eight. An Ehrlich-Aberth iteration finds all eight complex roots simultaneously.
+If the iteration does not converge, the solver uses the eigenvalues of the companion matrix. The
+method uses neither bracketing nor root sampling, so it cannot lose a root between samples.
 
 **Every candidate is finished in joint space.** A few Gauss-Newton steps against the target pose
 take each solution to the last digits of double precision. The resulting pose error provides the

@@ -137,9 +137,12 @@ Its real roots are the roots of $f$, and its companion matrix is real and $8 \ti
 substitution sends $\theta = \pi$ to $t = \infty$, so the angular origin is first shifted to put
 $\theta = \pi$ where $\lvert f \rvert$ is largest, which guarantees no root is lost off the end.
 
-The reference implementation calls `numpy.roots`. The Rust port will build the companion matrix and
-calculate its eigenvalues with `nalgebra::linalg::Schur`. Both approaches provide a finite,
-complete calculation without sampling or bracketing, so roots cannot fall between samples.
+The reference implementation calls `numpy.roots`, which takes the eigenvalues of the companion
+matrix. The Rust port uses the Ehrlich-Aberth iteration to refine all eight complex roots
+simultaneously from a circle of starting points. This iteration costs a fraction of the eigenvalue
+problem. If it does not converge, the port builds the companion matrix and takes its eigenvalues
+with `nalgebra::linalg::Schur`. Both approaches provide a finite, complete calculation without
+sampling or bracketing, so roots cannot fall between samples.
 
 ## Rebuilding $O_3$ geometrically
 
@@ -290,7 +293,7 @@ Per target pose:
 | Step | Cost |
 |---|---|
 | Fourier coefficients of $f$ | 16 evaluations of the geometry |
-| Roots | one $8 \times 8$ eigenvalue problem |
+| Roots | one degree-eight polynomial solve, under ten passes of the Ehrlich-Aberth iteration |
 | Branch polish | up to 16 short Newton solves |
 | Joint polish and check | up to 16 forward kinematics chains, a few times each |
 

@@ -67,12 +67,24 @@ fn residuals(robot: &Crx, joints: &[f64; 6], target: &Iso3) -> SVector<f64, 12> 
 /// returns: [f64; 6]
 pub fn polish_joints(robot: &Crx, joints: &[f64; 6], target: &Iso3) -> [f64; 6] {
     const MAX_STEPS: usize = 25;
-    const TOL: f64 = 1e-13;
     const NUDGE: f64 = 1e-6;
+
+    // Gauss-Newton converges quadratically, so one step from a good candidate reaches a pose within
+    // a few rounding errors of the target. On an arm with a reach of one or two meters, a
+    // translation has a rounding error of a few times 1e-13 mm. A lower tolerance adds a step that
+    // cannot improve the result. This tolerance is four orders of magnitude below the acceptance
+    // tolerance.
+    const TOL: f64 = 1e-12;
+
+    // This is the maximum permitted step in degrees. A candidate starts within a small fraction of
+    // a degree of its solution. A step of many degrees therefore indicates that the Jacobian is
+    // nearly rank deficient and that the step follows a direction with little effect on the pose.
+    // Following such steps turns polishing into a random walk that can reach an unrelated solution
+    // many turns away.
+    const MAX_STEP: f64 = 10.0;
 
     let mut joints = *joints;
     let mut worst = pose_error(robot, &joints, target);
-
     for _ in 0..MAX_STEPS {
         if worst < TOL {
             break;
@@ -87,11 +99,12 @@ pub fn polish_joints(robot: &Crx, joints: &[f64; 6], target: &Iso3) -> [f64; 6] 
             jacobian.set_column(column, &column_values);
         }
 
-        let svd = SVD::new(jacobian, true, true);
-        let largest = svd.singular_values.max();
-        let Ok(step) = svd.solve(&(-current), largest * 1e-12) else {
+        let Some(step) = least_squares_step(&jacobian, &current) else {
             break;
         };
+        if step.amax() > MAX_STEP {
+            break;
+        }
 
         let mut moved = joints;
         for index in 0..6 {
@@ -110,6 +123,49 @@ pub fn polish_joints(robot: &Crx, joints: &[f64; 6], target: &Iso3) -> [f64; 6] 
     }
 
     joints
+}
+
+/// The least squares step `delta` that minimizes `|jacobian * delta + residual|`.
+///
+/// Away from a singularity, a Cholesky factorization of the normal equations finds the step at a
+/// small fraction of the cost of a singular value decomposition. Squaring the Jacobian squares its
+/// condition number. Polishing evaluates the exact residual after every step, so a small directional
+/// error can add an iteration without reducing the final accuracy.
+///
+/// Near a singularity, the squared system loses too much precision. At a singularity, a line of
+/// least squares solutions exists, and the normal equations do not select the smallest solution.
+/// The singular value decomposition selects the smallest step, which keeps the solution at its
+/// initial position along the free direction.
+///
+/// # Arguments
+///
+/// * `jacobian`: the derivative of the residuals with respect to the joints
+/// * `residual`: the residuals at the current joints
+///
+/// returns: Option<SVector<f64, 6>>, or None if the decomposition failed
+fn least_squares_step(
+    jacobian: &SMatrix<f64, 12, 6>,
+    residual: &SVector<f64, 12>,
+) -> Option<SVector<f64, 6>> {
+    // The diagonal of the Cholesky factor approximates the singular values of the Jacobian within
+    // a modest factor. This ratio therefore permits condition numbers up to one hundred thousand.
+    // Squaring such a condition number costs the normal equations ten of their sixteen digits and
+    // leaves enough precision for polishing to converge in a few iterations. Larger condition
+    // numbers can cause a near-singular configuration to fail to converge.
+    const CONDITION_TOL: f64 = 1e-5;
+
+    let normal = jacobian.transpose() * jacobian;
+    if let Some(cholesky) = normal.cholesky() {
+        let pivots = cholesky.l().diagonal();
+        let largest = pivots.max();
+        if largest > 0.0 && pivots.min() > CONDITION_TOL * largest {
+            return Some(cholesky.solve(&(-(jacobian.transpose() * residual))));
+        }
+    }
+
+    let svd = SVD::new(*jacobian, true, true);
+    let largest = svd.singular_values.max();
+    svd.solve(&(-residual), largest * 1e-12).ok()
 }
 
 /// Largest per-joint difference between two joint vectors, in radians, counting angles a full turn

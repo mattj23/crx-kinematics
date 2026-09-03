@@ -68,11 +68,15 @@ impl TrigPoly {
         let mut b = [0.0; DEGREE + 1];
         let step = 2.0 * PI / SAMPLE_COUNT as f64;
 
+        // Every angle required by the transform is a multiple of the sample spacing. Use one table
+        // of those multiples to obtain the sines and cosines of the harmonics.
+        let table: [(f64, f64); SAMPLE_COUNT] =
+            std::array::from_fn(|index| (step * index as f64).sin_cos());
+
         for (index, sample) in samples.iter().enumerate() {
-            let theta = step * index as f64;
             a[0] += sample;
             for k in 1..=DEGREE {
-                let (sin, cos) = (k as f64 * theta).sin_cos();
+                let (sin, cos) = table[(k * index) % SAMPLE_COUNT];
                 a[k] += sample * cos;
                 b[k] += sample * sin;
             }
@@ -97,8 +101,8 @@ impl TrigPoly {
     pub fn eval(&self, theta: f64) -> (f64, f64) {
         let mut value = self.a[0];
         let mut derivative = 0.0;
-        for k in 1..=DEGREE {
-            let (sin, cos) = (k as f64 * theta).sin_cos();
+        for (index, (sin, cos)) in harmonics(theta).into_iter().enumerate() {
+            let k = index + 1;
             value += self.a[k] * cos + self.b[k] * sin;
             derivative += k as f64 * (self.b[k] * cos - self.a[k] * sin);
         }
@@ -114,8 +118,8 @@ impl TrigPoly {
     /// returns: TrigPoly
     pub fn shifted(&self, shift: f64) -> Self {
         let mut out = *self;
-        for k in 1..=DEGREE {
-            let (sin, cos) = (k as f64 * shift).sin_cos();
+        for (index, (sin, cos)) in harmonics(shift).into_iter().enumerate() {
+            let k = index + 1;
             out.a[k] = self.a[k] * cos + self.b[k] * sin;
             out.b[k] = self.b[k] * cos - self.a[k] * sin;
         }
@@ -207,6 +211,30 @@ impl TrigPoly {
 
         out
     }
+}
+
+/// The sine and cosine of `k theta` for `k` from one to [`DEGREE`], in that order.
+///
+/// The angle-addition formulas extend one evaluation of the sine and cosine of `theta` to all
+/// harmonics. The rounding error grows in proportion to `k` and is negligible for four harmonics.
+/// This calculation uses a few multiplications in place of additional transcendental functions.
+///
+/// # Arguments
+///
+/// * `theta`: the angle
+///
+/// returns: [(f64, f64); DEGREE], as `(sin, cos)` pairs
+fn harmonics(theta: f64) -> [(f64, f64); DEGREE] {
+    let (sin, cos) = theta.sin_cos();
+    let mut out = [(sin, cos); DEGREE];
+    for k in 1..DEGREE {
+        let (prev_sin, prev_cos) = out[k - 1];
+        out[k] = (
+            prev_sin * cos + prev_cos * sin,
+            prev_cos * cos - prev_sin * sin,
+        );
+    }
+    out
 }
 
 #[cfg(test)]
