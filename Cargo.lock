@@ -218,6 +218,7 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
+ "tol-compress",
 ]
 
 [[package]]
@@ -940,6 +941,12 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "tol-compress"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15bec83f3b351e0819c8ae18f61b4dfbd58d96f4896fb7b429cd9f768754c14f"
 
 [[package]]
 name = "typenum"

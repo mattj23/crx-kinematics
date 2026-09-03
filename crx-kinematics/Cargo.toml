@@ -5,18 +5,30 @@ license = "MIT OR Apache-2.0"
 version.workspace = true
 edition.workspace = true
 # The oldest toolchain the crate has been checked against. Edition 2024 sets a floor of 1.85, but
-# 1.87 is the earliest available here, so it is what can honestly be claimed.
-rust-version = "1.87"
+# tol-compress requires 1.88, which now sets the floor for the whole crate. The floor applies even
+# with the `meshes` feature off, because a manifest can only declare one.
+rust-version = "1.88"
 readme = "README.md"
 repository = "https://github.com/mattj23/crx-kinematics"
 documentation = "https://docs.rs/crx-kinematics"
 keywords = ["robotics", "kinematics", "fanuc", "robot", "ik"]
 categories = ["science::robotics", "mathematics"]
 
+[features]
+# Link meshes are enabled by default so callers can draw a robot without first enabling a feature.
+# Setting `default-features = false` removes the tol-compress dependency, approximately 460 KB of
+# embedded geometry, and the `meshes` module.
+default = ["meshes"]
+meshes = ["dep:tol-compress"]
+
 [dependencies]
-# nalgebra is deliberately the only dependency because it provides the isometries, points, and
-# vectors needed for the library's arithmetic.
+# nalgebra provides the isometries, points, and vectors needed for the library's arithmetic. It is
+# the only unconditional dependency.
 nalgebra = { workspace = true }
+
+# Decoder for the embedded link geometry, which is stored in the tcmesh format. It has no
+# dependencies of its own, so the `meshes` feature adds one crate to a consumer's dependency graph.
+tol-compress = { version = "0.2", optional = true }
 
 
 [lib]
