@@ -1,7 +1,10 @@
 # crx-kinematics
 
 Forward and inverse kinematics for the [FANUC CRX](https://www.fanuc.co.jp/en/product/robot/index.html)
-family of collaborative robots. The only dependency is [`nalgebra`](https://nalgebra.org/).
+family of collaborative robots. The dependencies are [`nalgebra`](https://nalgebra.org/) and
+[`tol-compress`](https://crates.io/crates/tol-compress), which decodes the embedded link meshes and
+has no dependencies of its own. Building with `default-features = false` removes the meshes and
+`tol-compress` dependency, leaving `nalgebra` as the only dependency.
 
 The inverse kinematics is complete and direct. For a reachable flange pose it returns *every* joint
 configuration that reaches it, up to the sixteen this architecture allows, and it does so without
@@ -52,6 +55,29 @@ architecture. They are enumerated with their treatment in
 along with
 [two configurations the method cannot recover](https://github.com/mattj23/crx-kinematics/blob/main/docs/LINEAR_METHOD.md#unrecoverable-configurations),
 both of which place the wrist center inside the robot's own base casting.
+
+## Link Meshes
+
+The crate embeds visual geometry for the CRX-5iA and the CRX-10iA: seven triangle meshes each,
+covering the stationary base and the six moving links. The buffers are plain arrays that can be
+passed directly to a renderer or mesh library.
+
+```rust
+use crx_kinematics::{Crx, CrxModel, LinkMeshes};
+
+let robot = Crx::new_10ia();
+let meshes = LinkMeshes::load(CrxModel::Crx10iA)?;
+
+for link in meshes.posed(&robot, &[10.0, -80.0, 10.0, 20.0, -20.0, 45.0]) {
+    let vertices: Vec<[f64; 3]> = link.vertices;  // millimeters
+    let faces: Vec<[u32; 3]> = link.faces;        // indices into the vertices
+}
+```
+
+Index 0 contains the stationary base. Index `i` contains the link that moves with frame `i - 1` of
+`fk_all`. The final mesh is the flange, whose mating face lies on the z = 0 plane of the pose
+reported by the controller. The other four models have no geometry, and `LinkMeshes::load` returns
+an error for them.
 
 Python bindings are published separately as
 [crx-kinematics](https://pypi.org/project/crx-kinematics/) on PyPI.

@@ -27,9 +27,12 @@ not be used to benchmark or evaluate their work.
 
 ## Using It from Rust
 
-The crate depends only on [`nalgebra`](https://nalgebra.org/), and poses are plain
-`nalgebra::Isometry3<f64>` values, so no conversion is needed to use it alongside another library
-built on the same types.
+Poses are plain `nalgebra::Isometry3<f64>` values, so no conversion is needed to use the crate
+alongside another library built on the same types. The dependencies are
+[`nalgebra`](https://nalgebra.org/) and, for the embedded link meshes described below,
+[`tol-compress`](https://crates.io/crates/tol-compress), which has no dependencies of its own.
+Building with `default-features = false` removes the meshes and `tol-compress` dependency, leaving
+`nalgebra` as the only dependency.
 
 ```bash
 cargo add crx-kinematics
@@ -65,6 +68,32 @@ of every frame in the chain, for drawing the arm or attaching geometry to a link
 Each solution carries the pose error it achieved and a `SolutionKind` marking whether it is an
 isolated solution or one representative of a continuum. `Crx::from_params` builds a robot from the
 four link dimensions directly, for a variant not in the table below.
+
+### Link Meshes
+
+The crate embeds visual geometry for the CRX-5iA and the CRX-10iA: seven triangle meshes each,
+covering the stationary base and the six moving links. The two buffers are plain arrays that can be
+passed directly to a renderer or mesh library.
+
+```rust
+use crx_kinematics::{Crx, CrxModel, LinkMeshes};
+
+let robot = Crx::new_10ia();
+let meshes = LinkMeshes::load(CrxModel::Crx10iA)?;
+
+// Copies of the seven meshes, each moved to where the joints put it.
+for link in meshes.posed(&robot, &[10.0, -80.0, 10.0, 20.0, -20.0, 45.0]) {
+    let vertices: Vec<[f64; 3]> = link.vertices;  // millimeters
+    let faces: Vec<[u32; 3]> = link.faces;        // indices into the vertices
+}
+```
+
+Index 0 contains the stationary base. Index `i` contains the link that moves with frame `i - 1` of
+`fk_all`. The final mesh is the flange, whose mating face lies on the z = 0 plane of the pose
+reported by the controller. Coordinates are in millimeters, matching the link dimensions.
+
+The other four models have no geometry, and `LinkMeshes::load` returns an error for them.
+`LinkMeshes::is_available` checks whether geometry is present without returning an error.
 
 ## Using It from Python
 
@@ -104,6 +133,34 @@ solutions = robot.ik(Iso3.from_xyzwpr(600, 0, 700, 180, 0, 0))
 
 `ik` returns joint angles only. `ik_detailed` returns the same solutions with the residual and kind
 attached.
+
+### Link Meshes
+
+The same embedded geometry reaches Python as NumPy arrays: vertices as an `(n, 3)` array of
+`float64` and faces as an `(m, 3)` array of `uint32`.
+
+```python
+from crx_kinematics import Crx, CrxModel, LinkMeshes
+
+robot = Crx.crx10ia()
+meshes = LinkMeshes.load(CrxModel.Crx10iA)
+
+for link in meshes.posed(robot, [10, -80, 10, 20, -20, 45]):
+    print(link.vertices.shape, link.faces.shape)
+```
+
+These array shapes and data types are accepted by an `engeom` `Mesh3`, so engeom can draw the robot
+without conversion or a dependency between the packages:
+
+```python
+from engeom.geom3 import Mesh3
+
+drawable = [Mesh3(link.vertices, link.faces) for link in meshes.posed(robot, joints)]
+```
+
+Geometry is embedded for the CRX-5iA and the CRX-10iA only. `LinkMeshes.load` raises `ValueError`
+for the other four models. `LinkMeshes.is_available` checks whether geometry is present without
+raising an exception.
 
 ## The Fanuc CRX Kinematic Layout
 
@@ -201,12 +258,13 @@ reference configuration adds a few percent. The forward kinematics costs about 0
 
 | Path | What it is |
 |---|---|
-| `crx-kinematics/` | The Rust library. Depends only on `nalgebra`. |
+| `crx-kinematics/` | The Rust library. Depends on `nalgebra`, plus `tol-compress` for the link meshes. |
+| `crx-kinematics/meshes/` | The link geometry for the CRX-5iA and CRX-10iA, embedded in the library and read from here by the derivation project. |
 | `py-crx-kinematics/` | The PyO3 binding and the Python package. |
 | `docs/LINEAR_METHOD.md` | The complete derivation and definitive description of the method. |
 | `docs/ALTERNATE.md` | An earlier, superseded derivation, kept for reference. |
 | `docs/BACKGROUND.md` | A primer on FANUC controller concepts and the isometries beneath them, for readers new to either. |
-| `derivation/` | A development-only, unpublished Python project containing the NumPy reference solver, its tests, and the tooling that draws the robot. |
+| `derivation/` | A development-only, unpublished Python project containing the NumPy reference solver, its tests, and the tooling that draws the robot. It reads the meshes from `crx-kinematics/meshes/`, so it must be installed editable from a checkout. |
 
 The Rust test suites are pose stress tests and should be run in release: `cargo test -r`. They
 include a fixture comparison that checks the Rust roots against roots exported from the NumPy

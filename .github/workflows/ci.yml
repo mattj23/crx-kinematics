@@ -39,6 +39,10 @@ jobs:
         # Clippy runs the full rustc lint set as well, so this also gates ordinary warnings such as
         # unused imports.
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # The run above enables the default `meshes` feature and does not compile code paths for a
+      # build without that feature. Compile both configurations to verify the feature gates.
+      - name: Clippy without the default features
+        run: cargo clippy -p crx-kinematics --all-targets --no-default-features -- -D warnings
 
   test:
     name: Rust tests
@@ -52,23 +56,31 @@ jobs:
       # and a half minutes in debug, which is longer than the release build itself.
       - name: Run tests
         run: cargo test --workspace --release
+      # Verify that every mesh-specific test file has a crate-level `cfg` and that the tests compile
+      # when the meshes are disabled.
+      - name: Run tests without the default features
+        run: cargo test -p crx-kinematics --release --no-default-features
 
   msrv:
-    name: MSRV (1.87)
+    name: MSRV (1.88)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       # Verifies the `rust-version` promised by crx-kinematics, which is the only crate here
       # published to crates.io and so the only one making the promise. Edition 2024 puts the true
-      # floor at 1.85; 1.87 is what has actually been checked, so it is what is declared.
-      - uses: dtolnay/rust-toolchain@1.87.0
+      # floor at 1.85, and tol-compress raises it to 1.88, which is what is declared.
+      - uses: dtolnay/rust-toolchain@1.88.0
       - uses: Swatinem/rust-cache@v2
       - name: Check the library
-        run: cargo +1.87.0 check -p crx-kinematics
-      # The dev-dependencies are not part of the promise a consumer relies on, but a contributor on
-      # the minimum toolchain still has to be able to run the tests.
+        run: cargo +1.88.0 check -p crx-kinematics
+      # Disabling the meshes removes tol-compress. Check this configuration separately with the
+      # same minimum compiler version.
+      - name: Check the library without the default features
+        run: cargo +1.88.0 check -p crx-kinematics --no-default-features
+      # The compiler-version promise to consumers excludes dev-dependencies. Contributors using the
+      # minimum toolchain must still be able to run the tests.
       - name: Check the tests and benches
-        run: cargo +1.87.0 check -p crx-kinematics --all-targets
+        run: cargo +1.88.0 check -p crx-kinematics --all-targets
 
   python:
     name: Python bindings
@@ -135,10 +147,11 @@ jobs:
       # A dry run only builds the lib at default features, so it cannot see a test target whose data
       # was left out of the package. That matters here: the integration tests read recorded
       # controller data and exported root fixtures from tests/data, and a consumer who received the
-      # crate without them would have a suite that fails on arrival. Build and test the artifact as
-      # one is received. `cargo package` is run explicitly rather than reusing the dry run above: a
-      # dry run leaves only its extracted verify directory behind, not the .crate tarball, and the
-      # tarball is what a consumer actually receives.
+      # crate without them would receive a test suite that immediately fails. The link-mesh tests
+      # also decode all fourteen embedded files, so this step verifies that the package contains
+      # the meshes directory. Build and test the packaged artifact in the form received by a
+      # consumer. Run `cargo package` explicitly because the dry run leaves an extracted
+      # verification directory without the .crate archive that a consumer receives.
       - name: Test the packaged crate as a consumer receives it
         run: |
           set -euo pipefail
