@@ -1,7 +1,7 @@
 //! This module refines solutions against the target pose and identifies duplicate solutions.
 
 use crate::na::{SMatrix, SVD, SVector};
-use crate::{Crx, Iso3, wrap_pi};
+use crate::{Crx, Iso3, Vector3, wrap_pi};
 
 /// How near a candidate's pose must land, after polishing, to be accepted.
 ///
@@ -51,8 +51,66 @@ fn residuals(robot: &Crx, joints: &[f64; 6], target: &Iso3) -> SVector<f64, 12> 
     out
 }
 
-/// Refines a joint vector directly against the target pose by Gauss-Newton, with the Jacobian
-/// taken by finite difference of the forward kinematics.
+/// The derivative of the twelve residuals with respect to the six controller joint angles.
+///
+/// Turning a joint rotates every subsequent link about that joint's axis. The resulting screw
+/// motion defines the derivative of each flange-pose residual: every column of the flange
+/// orientation rotates about the axis direction, and the flange origin travels on a circle about
+/// the axis. The Jacobian can therefore be calculated from cross products with quantities already
+/// produced by the forward kinematics.
+///
+/// The target is constant, so subtracting it from the residuals has no effect on the derivative.
+///
+/// # Arguments
+///
+/// * `robot`: the robot model
+/// * `joints`: the joint vector at which the derivative is taken, in FANUC controller degrees
+///
+/// returns: SMatrix<f64, 12, 6>
+fn residual_jacobian(robot: &Crx, joints: &[f64; 6]) -> SMatrix<f64, 12, 6> {
+    let frames = robot.fk_all(joints);
+    let rotation = frames[5].rotation.to_rotation_matrix();
+    let flange = frames[5].translation.vector;
+
+    // Each column is the derivative with respect to one robot joint angle in radians. The first
+    // axis passes through the world origin. Each subsequent axis passes through the origin of its
+    // resulting frame, with its direction transformed by the preceding frame.
+    let mut axes = SMatrix::<f64, 12, 6>::zeros();
+    for index in 0..6 {
+        let (direction, point) = if index == 0 {
+            (robot.axis(0), Vector3::zeros())
+        } else {
+            (
+                frames[index - 1].rotation * robot.axis(index),
+                frames[index].translation.vector,
+            )
+        };
+
+        for column in 0..3 {
+            let turned = direction.cross(&rotation.matrix().column(column));
+            for row in 0..3 {
+                axes[(3 * row + column, index)] = turned[row];
+            }
+        }
+
+        let carried = direction.cross(&(flange - point));
+        for row in 0..3 {
+            axes[(9 + row, index)] = carried[row];
+        }
+    }
+
+    // The controller reports J3 relative to J2, so changing J2 turns the second and third axes
+    // together. Each remaining joint maps to its own axis. Scale every column from radians to
+    // degrees, the unit of the joint vector.
+    let scale = std::f64::consts::PI / 180.0;
+    let mut jacobian = axes * scale;
+    let coupled = (axes.column(1) + axes.column(2)) * scale;
+    jacobian.set_column(1, &coupled);
+    jacobian
+}
+
+/// Refines a joint vector directly against the target pose by Gauss-Newton with the analytic
+/// Jacobian of the forward kinematics.
 ///
 /// Where the Jacobian is rank deficient, which is what a singular configuration means, the least
 /// squares step is the smallest valid step, which keeps the solution at its initial position along
@@ -67,7 +125,6 @@ fn residuals(robot: &Crx, joints: &[f64; 6], target: &Iso3) -> SVector<f64, 12> 
 /// returns: [f64; 6]
 pub fn polish_joints(robot: &Crx, joints: &[f64; 6], target: &Iso3) -> [f64; 6] {
     const MAX_STEPS: usize = 25;
-    const NUDGE: f64 = 1e-6;
 
     // Gauss-Newton converges quadratically, so one step from a good candidate reaches a pose within
     // a few rounding errors of the target. On an arm with a reach of one or two meters, a
@@ -90,14 +147,7 @@ pub fn polish_joints(robot: &Crx, joints: &[f64; 6], target: &Iso3) -> [f64; 6] 
             break;
         }
         let current = residuals(robot, &joints, target);
-
-        let mut jacobian = SMatrix::<f64, 12, 6>::zeros();
-        for column in 0..6 {
-            let mut shifted = joints;
-            shifted[column] += NUDGE;
-            let column_values = (residuals(robot, &shifted, target) - current) / NUDGE;
-            jacobian.set_column(column, &column_values);
-        }
+        let jacobian = residual_jacobian(robot, &joints);
 
         let Some(step) = least_squares_step(&jacobian, &current) else {
             break;
@@ -111,9 +161,9 @@ pub fn polish_joints(robot: &Crx, joints: &[f64; 6], target: &Iso3) -> [f64; 6] 
             moved[index] += step[index];
         }
 
-        // Near a merged pair the step is long and the improvement slow, so the loop is allowed to
-        // run for a while, but a step that stops helping means the finite-difference Jacobian has
-        // reached its own noise floor and further iterations only move the answer around.
+        // Near a merged pair, long steps can improve the result slowly, so permit additional
+        // iterations. When a step stops improving the result, the residual has reached the floor
+        // of double precision and further iterations only move the answer around.
         let improved = pose_error(robot, &moved, target);
         if improved >= worst {
             break;
@@ -191,6 +241,39 @@ mod tests {
     use crate::tests::{all_robots, random_joints};
 
     #[test]
+    fn the_analytic_jacobian_matches_a_finite_difference() {
+        // The error of a central difference of the residuals is approximately proportional to the
+        // square of the step. A step of 1e-4 degrees therefore leaves an error near 1e-8 relative
+        // to the entry magnitudes. Translation-row entries are on the order of the arm's reach in
+        // millimeters, so scale the comparison by the largest entry in each column. An absolute
+        // comparison would use the wrong scale for these rows. Any target works because it enters
+        // the residuals as a constant and cancels in the difference.
+        const STEP: f64 = 1e-4;
+
+        for robot in all_robots() {
+            for _ in 0..200 {
+                let joints = random_joints();
+                let target = robot.fk(&[0.0; 6]);
+                let analytic = residual_jacobian(&robot, &joints);
+
+                for column in 0..6 {
+                    let mut ahead = joints;
+                    let mut behind = joints;
+                    ahead[column] += STEP;
+                    behind[column] -= STEP;
+                    let numeric = (residuals(&robot, &ahead, &target)
+                        - residuals(&robot, &behind, &target))
+                        / (2.0 * STEP);
+
+                    let scale = numeric.amax().max(1.0);
+                    let error = (analytic.column(column) - numeric).amax() / scale;
+                    assert!(error < 1e-6, "column {column} differed by {error:e}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn polishing_a_solution_leaves_it_alone() {
         // A configuration that already reaches the target should come back essentially unmoved.
         for robot in all_robots() {
@@ -251,9 +334,9 @@ mod tests {
 
     #[test]
     fn polishing_never_makes_things_worse() {
-        // From farther away, polishing can exhaust its steps or reach the finite-difference
-        // Jacobian's noise floor before converging on a near-singular configuration. It must not
-        // increase the pose error because that could turn a near miss into an incorrect solution.
+        // From farther away, polishing can exhaust its steps or stop improving before it converges
+        // on a near-singular configuration. It must not increase the pose error because that could
+        // turn a near miss into an incorrect solution.
         for robot in all_robots() {
             for _ in 0..500 {
                 let joints = random_joints();
