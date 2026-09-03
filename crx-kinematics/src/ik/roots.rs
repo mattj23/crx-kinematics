@@ -1,8 +1,12 @@
 //! This module finds every root of the scalar constraint.
 //!
 //! The finite, complete search converts the trigonometric polynomial into an ordinary polynomial
-//! of degree eight, whose roots are the eigenvalues of a companion matrix. Because the method does
-//! not sample the polynomial, it cannot miss a root between samples.
+//! of degree eight and finds all of its complex roots at once. Because the method does not sample
+//! the polynomial, it cannot miss a root between samples.
+//!
+//! The Ehrlich-Aberth iteration refines every root simultaneously and usually converges from a
+//! circle of starting points in a few passes. If it does not converge, the solver uses the
+//! eigenvalues of the polynomial's companion matrix, a slower and more established method.
 
 use super::trig_poly::{DEGREE, MAX_NEWTON_STEP, TrigPoly};
 use crate::na::{Complex, DMatrix};
@@ -45,9 +49,9 @@ pub fn theta_roots(poly: &TrigPoly) -> Vec<f64> {
             .into_iter()
             .map(|t| wrap_pi(2.0 * t.atan() + shift))
             .collect(),
-        // The iterative eigenvalue solver can fail to converge, although this failure has not been
-        // observed. The fallback provides candidates when convergence fails because a slower result
-        // is preferable to returning no solutions.
+        // Both root finders are iterative and can fail to converge, although no failures have been
+        // observed. If both fail, the slower bracketing fallback provides candidates and avoids
+        // returning no solutions.
         None => bracketed_roots(poly),
     };
 
@@ -88,17 +92,16 @@ pub fn theta_roots(poly: &TrigPoly) -> Vec<f64> {
     polished
 }
 
-/// The real roots of a polynomial given in ascending powers, as the eigenvalues of its companion
-/// matrix.
+/// The real roots of a polynomial given in ascending powers.
 ///
 /// # Arguments
 ///
 /// * `coefficients`: the polynomial, lowest power first
 ///
-/// returns: Option<Vec<f64>>, or None if the eigenvalue iteration did not converge
+/// returns: Option<Vec<f64>>, or None if neither root finder converged
 fn real_roots(coefficients: &[f64; 2 * DEGREE + 1]) -> Option<Vec<f64>> {
     // A leading coefficient of zero is a root at infinity, which is a root the substitution has
-    // already lost. Trimming those is what keeps the companion matrix well posed.
+    // already lost. Trimming those is what keeps the problem well posed.
     let largest = coefficients.iter().fold(0.0f64, |acc, c| acc.max(c.abs()));
     if largest == 0.0 {
         return Some(Vec::new());
@@ -109,7 +112,122 @@ fn real_roots(coefficients: &[f64; 2 * DEGREE + 1]) -> Option<Vec<f64>> {
     if degree == 0 {
         return Some(Vec::new());
     }
+    let coefficients = &coefficients[..=degree];
 
+    let roots = aberth_roots(coefficients).or_else(|| companion_roots(coefficients))?;
+
+    Some(
+        roots
+            .into_iter()
+            .filter(|value| value.im.abs() <= IMAGINARY_TOL * value.re.abs().max(1.0))
+            .map(|value| value.re)
+            .collect(),
+    )
+}
+
+/// Every root of a polynomial, by the Ehrlich-Aberth iteration.
+///
+/// The iteration keeps one estimate per root. It applies a Newton step corrected by repulsion from
+/// the other estimates, which prevents two estimates from converging to the same root. Convergence
+/// is cubic at a simple root and linear at a multiple root. The iteration accepts an estimate when
+/// the polynomial value is within the rounding error of evaluating the polynomial at that point,
+/// because further refinement cannot reliably reduce the value.
+///
+/// # Arguments
+///
+/// * `coefficients`: the polynomial, lowest power first, with a nonzero leading coefficient
+///
+/// returns: Option<Vec<Complex<f64>>>, or None if the iteration did not converge
+fn aberth_roots(coefficients: &[f64]) -> Option<Vec<Complex<f64>>> {
+    const MAX_PASSES: usize = 100;
+
+    // The value of a degree-eight polynomial evaluated by Horner's rule carries a rounding error
+    // of a few times the machine epsilon multiplied by the sum of its terms' magnitudes.
+    const FLOOR: f64 = 32.0 * f64::EPSILON;
+
+    let degree = coefficients.len() - 1;
+    let leading = coefficients[degree];
+    let monic: Vec<f64> = coefficients.iter().map(|c| c / leading).collect();
+
+    // By Fujiwara's bound, the starting points lie on a circle whose radius is within a factor of
+    // two of the largest root's magnitude. The offset keeps the points off the real axis and
+    // prevents symmetry from trapping a pair of estimates against each other.
+    let radius = (0..degree)
+        .map(|i| monic[i].abs().powf(1.0 / (degree - i) as f64))
+        .fold(0.0f64, f64::max);
+    if radius == 0.0 {
+        return Some(vec![Complex::new(0.0, 0.0); degree]);
+    }
+    let mut roots: Vec<Complex<f64>> = (0..degree)
+        .map(|k| Complex::from_polar(radius, 2.0 * PI * k as f64 / degree as f64 + 0.4))
+        .collect();
+
+    for _ in 0..MAX_PASSES {
+        let mut all_settled = true;
+
+        for k in 0..degree {
+            let z = roots[k];
+
+            // The polynomial and its derivative by Horner's rule, along with the magnitude sum
+            // that bounds the rounding error of the value.
+            let mut value = Complex::new(monic[degree], 0.0);
+            let mut derivative = Complex::new(0.0, 0.0);
+            let mut bound = 1.0;
+            let magnitude = z.norm();
+            for i in (0..degree).rev() {
+                derivative = derivative * z + value;
+                value = value * z + monic[i];
+                bound = bound * magnitude + monic[i].abs();
+            }
+            if value.norm() <= FLOOR * bound {
+                continue;
+            }
+            all_settled = false;
+
+            if derivative == Complex::new(0.0, 0.0) {
+                // A stationary point. Nudging the estimate off it is enough for the next pass.
+                roots[k] = z + Complex::new(1e-3 * radius, 1e-3 * radius);
+                continue;
+            }
+            let newton = value / derivative;
+            let mut repulsion = Complex::new(0.0, 0.0);
+            for (j, other) in roots.iter().enumerate() {
+                if j != k {
+                    let separation = z - other;
+                    if separation == Complex::new(0.0, 0.0) {
+                        return None;
+                    }
+                    repulsion += Complex::new(1.0, 0.0) / separation;
+                }
+            }
+            let denominator = Complex::new(1.0, 0.0) - newton * repulsion;
+            let correction = if denominator == Complex::new(0.0, 0.0) {
+                newton
+            } else {
+                newton / denominator
+            };
+            if !correction.re.is_finite() || !correction.im.is_finite() {
+                return None;
+            }
+            roots[k] = z - correction;
+        }
+
+        if all_settled {
+            return Some(roots);
+        }
+    }
+    None
+}
+
+/// Every root of a polynomial, as the eigenvalues of its companion matrix.
+///
+/// # Arguments
+///
+/// * `coefficients`: the polynomial, lowest power first, with a nonzero leading coefficient
+///
+/// returns: Option<Vec<Complex<f64>>>, or None if the eigenvalue iteration did not converge
+fn companion_roots(coefficients: &[f64]) -> Option<Vec<Complex<f64>>> {
+    let degree = coefficients.len() - 1;
     let leading = coefficients[degree];
     let mut companion = DMatrix::zeros(degree, degree);
     for row in 1..degree {
@@ -118,20 +236,11 @@ fn real_roots(coefficients: &[f64; 2 * DEGREE + 1]) -> Option<Vec<f64>> {
     for column in 0..degree {
         companion[(0, column)] = -coefficients[degree - 1 - column] / leading;
     }
-
-    let eigenvalues: Vec<Complex<f64>> = companion.complex_eigenvalues().iter().copied().collect();
-
-    Some(
-        eigenvalues
-            .into_iter()
-            .filter(|value| value.im.abs() <= IMAGINARY_TOL * value.re.abs().max(1.0))
-            .map(|value| value.re)
-            .collect(),
-    )
+    Some(companion.complex_eigenvalues().iter().copied().collect())
 }
 
-/// Roots found by scanning for sign changes and bisecting, used only when the eigenvalue solve
-/// does not converge.
+/// Roots found by scanning for sign changes and bisecting, used only when neither root finder
+/// converges.
 ///
 /// This fallback cannot find a double root because `f` touches zero there without crossing it.
 ///
@@ -260,8 +369,46 @@ mod tests {
     }
 
     #[test]
+    fn both_root_finders_agree() {
+        // The solver reaches the companion matrix only if the iteration fails, and no such failure
+        // has been observed. Compare the methods directly to verify that each method finds every
+        // root found by the other. Near the J1 axis, up to four roots cluster together. Any method
+        // locates a root of multiplicity four only to approximately the fourth root of machine
+        // epsilon, so the tolerance accounts for that limit.
+        for robot in all_robots() {
+            for _ in 0..300 {
+                let target = robot.fk(&random_joints());
+                let poly = TrigPoly::from_setup(&Setup::new(&robot, &target));
+                let coefficients = poly.shifted(poly.origin_shift()).half_angle_polynomial();
+                let degree = coefficients
+                    .iter()
+                    .rposition(|c| c.abs() > 0.0)
+                    .expect("a nonzero polynomial");
+                let coefficients = &coefficients[..=degree];
+
+                let iterated = aberth_roots(coefficients).expect("the iteration converged");
+                let eigen = companion_roots(coefficients).expect("the eigenvalues converged");
+                assert_eq!(iterated.len(), degree);
+                assert_eq!(eigen.len(), degree);
+
+                let scale = iterated.iter().map(|r| r.norm()).fold(1.0f64, f64::max);
+                for root in &iterated {
+                    let nearest = eigen
+                        .iter()
+                        .map(|e| (e - root).norm())
+                        .fold(f64::INFINITY, f64::min);
+                    assert!(
+                        nearest < 1e-3 * scale,
+                        "root {root} was {nearest:e} from any eigenvalue"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn the_fallback_finds_the_simple_roots() {
-        // The bracketing path is only reached if the eigenvalue solve fails, which has not been
+        // The bracketing path is only reached if both root finders fail, which has not been
         // observed, so it is exercised directly here.
         for robot in all_robots() {
             for _ in 0..200 {

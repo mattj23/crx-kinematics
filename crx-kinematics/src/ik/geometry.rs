@@ -187,6 +187,14 @@ impl Setup<'_> {
         const STARTS: usize = 16;
         let mut found: Vec<f64> = Vec::new();
 
+        // O4 is O5 plus a radius of `y1` in some direction. Its minimum distance from the axis is
+        // therefore the distance of O5 minus that radius. Most targets have a lower bound above
+        // the tolerance, so skip the axis search for those targets.
+        let nearest_possible = self.o5.x.hypot(self.o5.y) - self.robot.y1();
+        if nearest_possible > 2.0 * AXIS_TOL * self.robot.z1() {
+            return found;
+        }
+
         for index in 0..STARTS {
             let mut theta = 2.0 * PI * index as f64 / STARTS as f64;
             for _ in 0..20 {

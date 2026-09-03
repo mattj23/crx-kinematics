@@ -20,7 +20,7 @@ const ANGLE_TOL: f64 = 1e-5;
 
 /// Angles nearer than this are the same root reported twice.
 ///
-/// A double root reaches the two eigenvalue solvers as a conjugate pair, and the pair's real parts
+/// A double root reaches the two root finders as a conjugate pair, and the pair's real parts
 /// can be a fraction of a microradian apart or identical, depending on the solver. One
 /// implementation can therefore report one angle while the other reports two. Genuine roots are
 /// farther apart by orders of magnitude, so merging at this distance permits a comparison of the

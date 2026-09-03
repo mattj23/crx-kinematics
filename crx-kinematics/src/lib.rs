@@ -78,6 +78,12 @@ impl Crx {
         self.y1
     }
 
+    /// Returns the rotation axis of the joint at `index`, as a direction in the frame of the link
+    /// that carries the joint.
+    pub(crate) fn axis(&self, index: usize) -> Vector3 {
+        self.h[index]
+    }
+
     /// Creates a robot from its four link lengths.
     ///
     /// Every robot in the CRX family shares one kinematic layout and differs only in these four

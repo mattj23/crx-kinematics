@@ -2,8 +2,8 @@
 //!
 //! The stages are measured separately because they answer different questions. Sampling the
 //! constraint evaluates a fixed expression and should have consistent cost. Root recovery runs an
-//! eigenvalue iteration whose cost depends on the input matrix. Separate measurements identify
-//! which operation caused a performance change.
+//! iteration whose cost depends on the polynomial. Separate measurements identify which operation
+//! caused a performance change.
 //!
 //! Every measurement runs over the same corpus of poses, drawn from a fixed seed, so that two runs
 //! are comparable and measurement changes reflect code changes.

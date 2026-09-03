@@ -3,7 +3,17 @@
 Forward and inverse kinematics for the FANUC CRX family of collaborative robots, as a Rust crate
 with a Python binary extension module built on it.
 
-The inverse kinematics method returns *every* joint configuration for a reachable flange pose, up
+> [!WARNING]
+> This library only solves the mathematical kinematics problem, it does not check that the robot
+> can reach poses without self-collision!
+
+---
+
+This implementation was intended to be fast.  On an AMD Ryzen 7 PRO 8840U (a mid-level mobile 
+processor from 2024) the `criterion` benchmark takes roughly 13.7 µs per pose for the inverse 
+kinematics and 0.11 µs per pose for the forward kinematics. 
+
+The inverse kinematics method returns all joint configurations for a reachable flange pose, up
 to the sixteen configurations this architecture allows. It requires no seeding, sampling, or
 iteration toward a single answer. The method reduces the problem to the roots of one scalar
 equation whose degree is known in advance, so the count of candidates is fixed before any
@@ -163,38 +173,15 @@ two postures each give the literature's bound of sixteen.
 
 **The roots come from an ordinary polynomial solve.** Because the degree is known, sixteen samples
 of $f$ recover its Fourier coefficients exactly. A half-angle substitution turns it into a real
-polynomial of degree eight, whose roots are the eigenvalues of an 8x8 companion matrix. The method
-uses neither bracketing nor root sampling, so it cannot lose a root between samples.
+polynomial of degree eight. An Ehrlich-Aberth iteration finds all eight complex roots simultaneously.
+If the iteration does not converge, the solver uses the eigenvalues of the companion matrix. The
+method uses neither bracketing nor root sampling, so it cannot lose a root between samples.
 
 **Every candidate is finished in joint space.** A few Gauss-Newton steps against the target pose
 take each solution to the last digits of double precision. The resulting pose error provides the
 acceptance criterion and permits broad candidate generation. Rejecting an invalid candidate costs a
 few Gauss-Newton steps, while an omitted candidate cannot be recovered later.
 
-## Degenerate Configurations, and Issue #1
-
-Several configurations invalidate one or more steps in the reduction above. All are ordinary poses
-that a real robot can be driven to; they are degenerate only in the mathematical sense. They are
-enumerated, with their treatment, in
-[the derivation](https://github.com/mattj23/crx-kinematics/blob/main/docs/LINEAR_METHOD.md#degenerate-configurations).
-
-[Issue #1](https://github.com/mattj23/crx-kinematics/issues/1) documents a pose that the other
-implementations surveyed below fail. On a CRX-10iA at $[10, -80, 10, 20, -20, 45]$, the wrist center
-lands exactly on the J1 axis. Two conditions occur together: the vertical plane used by the
-derivation has no defined orientation, and $O_4$ has no azimuth from which to determine the base
-angle. **This pose is a mathematically degenerate configuration.** It occurs whenever the kinematic
-J3 rotation is a quarter turn from J2, a configuration that an operator can enter directly.
-
-The solver detects it by distance and handles it with a separate construction, which returns all
-sixteen solutions for that pose, including the joint values it was built from. Because a pose that
-*misses* the axis by a nanometer is just as hard as one that hits it, the same construction handles
-near misses, and the joint polish absorbs the ignored nanometer.
-
-The method cannot recover two configurations documented under
-[Unrecoverable configurations](https://github.com/mattj23/crx-kinematics/blob/main/docs/LINEAR_METHOD.md#unrecoverable-configurations).
-For both configurations, the solver returns solutions that reach the requested pose without
-recovering the configuration that produced it. Both place the wrist center inside the robot's base
-casting, so a real arm cannot reach them.
 
 ## Accuracy and Speed
 
@@ -203,11 +190,12 @@ across the round-trip suites the worst pose error of any returned solution is on
 $10^{-12}$ mm. Acceptance is at $10^{-8}$ mm, far above what a valid solution achieves and far
 below what an invalid candidate can reach.
 
-The Rust solver takes roughly 0.25 ms per pose to return all solutions, measured with `criterion`
-over a corpus of random poses; run `cargo bench` for the figure on your own machine. The joint
-polish dominates, with everything up to the candidate angles accounting for under a tenth of it.
-The NumPy reference in `derivation/` takes about 80 ms per pose and prioritizes readability and
-comparison over speed.
+The Rust solver takes roughly 13.7 µs per pose to return all solutions, measured with `criterion`
+over a corpus of 512 random poses on an AMD Ryzen 7 PRO 8840U (single-thread PassMark 3636); run
+`cargo bench` for the figure on your own machine. About a third of that is finding the roots of the
+constraint, and the rest is spread over locating $O_3$, reading off the joints, and the joint
+polish, which uses an analytic Jacobian rather than a numerical one. Picking the solution nearest a
+reference configuration adds a few percent. The forward kinematics costs about 0.11 µs per pose. 
 
 ## What's in This Repository
 
@@ -263,3 +251,53 @@ not appear to implement the CRX family's three-parallel-axis configuration, acco
 of the paper on which the library is based.
 
 [^abbes]: Abbes, Manel, and Gérard Poisson. "Geometric Approach for Inverse Kinematics of the FANUC CRX Collaborative Robot." *Robotics* 13, no. 6 (June 14, 2024): 91. The article is open access and is published at https://www.mdpi.com/2218-6581/13/6/91.
+
+## Known Issues
+
+### Missed configurations near the J1 Axis
+
+The solver treats $O_4$ as on the J1 axis when it is within `AXIS_TOL`, a millionth of $z_1$, 
+and it uses the separate construction described above. Just outside that band, from about 
+$10^{-5}$ to $10^{-4}$ degrees of J3 away from an exact crossing, corresponding to a few micrometers 
+of $O_4$, the ordinary method becomes unreliable. 
+
+Up to four roots of the constraint cluster together in this region and can be located only to about
+$10^{-4}$ radians. The residual used to select between the two $O_3$ branches varies over a range
+narrower than that accuracy, so rounding determines whether branch polishing reaches the correct
+root. 
+
+Measurements over five thousand poses per model at each offset show that the solver fails to
+return the generating configuration for one to two percent of all poses and less than one percent
+of poses that avoid the unrecoverable configurations. Every returned solution still reaches the
+pose. Widening `AXIS_TOL` does not resolve these misses because the on-axis construction is exact
+only on the axis, and joint polishing cannot reliably absorb an offset of that size. The
+`near_axis_rate` example in `crx-kinematics/examples` measures the failure rate and prints the
+missed poses.
+
+### Unrecoverable configurations
+
+The method cannot recover two configurations documented under
+[Unrecoverable configurations](https://github.com/mattj23/crx-kinematics/blob/main/docs/LINEAR_METHOD.md#unrecoverable-configurations).
+For both configurations, the solver returns solutions that reach the requested pose without
+recovering the configuration that produced it. Both place the wrist center inside the robot's base
+casting, so a real arm can't reach them.
+
+### Joint ranges and physical collisions
+
+Candidates are built with J1, J2, J4, J5, and J6 in $[-180, 180)$ degrees and J3 in $(-360, 360)$, 
+because the J2/J3 coupling is undone after wrapping, and the joint polish can then carry a value 
+slightly past either end. The solver reports every configuration that reaches the pose, including 
+configurations outside the joint limits of the physical robot and configurations that pass through 
+the base or the floor. For now the caller must filter solutions against the applicable limits.
+
+> [!NOTE]
+> The robot datasheets publish the actual joint limits, and they vary by model.  On the 5iA and the 10iA
+> (which I have on hand) all joints are capable of at least 360 degrees total, while most are over 
+> 380 and J3 is as high as 635 on the 5iA.  This extra angular range isn't returned by this library
+> which, for now, is only returning mathematically unique configurations.  I haven't decided how...or even
+> _if_...it makes sense to handle the extra range.
+
+Additionally, this library does no collision detection.  Valid joint solutions may produce positions
+where the robot hits itself.  Since the library has no way of knowing where you've put your robot
+and what you might have attached to it, you'll have to do collision detection on the resulting
+solutions to know if they're safe for your setup.

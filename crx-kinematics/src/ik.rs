@@ -28,6 +28,23 @@ use crate::{Crx, Iso3, Point3, wrap_pi};
 /// How small a branch's perpendicularity residual must be for its angle to count as converged.
 const RESIDUAL_TOL: f64 = 1e-9;
 
+/// The maximum branch residual that identifies an accurate root on that branch.
+///
+/// A double root is located to about half a thousandth of a radian, which leaves a residual of
+/// that order on the branch that owns it. This threshold is much lower than the residual produced
+/// by an inaccurate root.
+const SCREEN_TINY: f64 = 1e-6;
+
+/// The minimum residual that excludes a branch when the other branch is below [`SCREEN_TINY`].
+///
+/// The four orders of magnitude between the two thresholds are the margin for the two branches
+/// having different sensitivities to the angle.
+const SCREEN_LARGE: f64 = 1e-2;
+
+/// How far O4 must be from the J1 axis, as a fraction of `z1`, for the branch residuals to be
+/// trusted to screen a branch out.
+const SCREEN_AXIS_CLEARANCE: f64 = 1e-2;
+
 /// What sort of configuration a solution came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SolutionKind {
@@ -182,7 +199,28 @@ fn candidates(setup: &Setup) -> Vec<Candidate> {
         }
         let (o4, _) = setup.o4_and_axis(theta);
 
-        for branch in [1.0, -1.0] {
+        // At a simple root, one branch has a zero residual and the other generally has a residual
+        // of order one. When an accurate root produces a small residual on one branch and a large
+        // residual on the other, the branch with the large residual cannot contain a solution.
+        // Skipping that branch avoids polishing it and then detecting a duplicate. Follow both
+        // branches when their residuals are moderate because this pattern indicates an inaccurate
+        // root at a merged pair. Also follow both branches near the J1 axis, where the vertical
+        // plane changes rapidly and the residuals are unreliable.
+        let screened = if setup.axis_distance(theta).0 > SCREEN_AXIS_CLEARANCE * setup.robot.z1() {
+            [
+                setup.branch_residual(theta, 1.0).map(f64::abs),
+                setup.branch_residual(theta, -1.0).map(f64::abs),
+            ]
+        } else {
+            [None, None]
+        };
+
+        for (index, branch) in [1.0, -1.0].into_iter().enumerate() {
+            if let (Some(own), Some(other)) = (screened[index], screened[1 - index]) {
+                if own > SCREEN_LARGE && other < SCREEN_TINY {
+                    continue;
+                }
+            }
             let refined = polish_branch(setup, theta, branch);
             let residual = refined.and_then(|t| setup.branch_residual(t, branch));
 
