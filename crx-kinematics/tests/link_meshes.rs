@@ -94,10 +94,13 @@ fn the_two_available_models_decode_into_seven_coherent_meshes() {
     }
 }
 
+/// The minimum and maximum corner of one mesh, in millimeters.
+type Bounds = ([f64; 3], [f64; 3]);
+
 #[test]
 fn the_meshes_have_the_extents_of_the_arm_they_belong_to() {
     // Millimeters, as the minimum and maximum corner of each mesh in its own frame.
-    let expected: [(CrxModel, [([f64; 3], [f64; 3]); LINK_COUNT]); 2] = [
+    let expected: [(CrxModel, [Bounds; LINK_COUNT]); 2] = [
         (
             CrxModel::Crx5iA,
             [
