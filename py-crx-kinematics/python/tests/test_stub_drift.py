@@ -60,15 +60,19 @@ def test_the_stub_and_the_module_declare_the_same_classes():
     assert in_module == in_stub
 
 
-@pytest.mark.parametrize("class_name", ["Crx", "IkSolution", "SolutionKind"])
+@pytest.mark.parametrize(
+    "class_name", ["Crx", "CrxModel", "IkSolution", "LinkMesh", "LinkMeshes", "SolutionKind"]
+)
 def test_the_stub_and_the_module_declare_the_same_members(class_name: str):
-    in_module = _public(vars(getattr(native, class_name)))
+    cls = getattr(native, class_name)
+    in_module = _public(vars(cls))
     in_stub = _stub_classes()[class_name]
 
-    # Python's enum machinery adds enum members to the class. Restrict the comparison to members
-    # that the stub declares.
-    if class_name == "SolutionKind":
-        in_module = {name for name in in_module if name in in_stub or name.istitle()}
-        in_module -= {"name", "value"}
-
+    # An enum carries its variants as class members alongside the `name` and `value` attributes
+    # added by Python's enum machinery. The stub omits those attributes. Identify variants by
+    # selecting members that are instances of the class itself. This approach handles spellings
+    # such as `Crx10iAL`, which a capitalization rule would fail to recognize.
+    variants = {name for name, obj in vars(cls).items() if isinstance(obj, cls)}
+    if variants:
+        in_module = variants
     assert in_module == in_stub
