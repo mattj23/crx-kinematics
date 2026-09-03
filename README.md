@@ -3,7 +3,17 @@
 Forward and inverse kinematics for the FANUC CRX family of collaborative robots, as a Rust crate
 with a Python binary extension module built on it.
 
-The inverse kinematics method returns *every* joint configuration for a reachable flange pose, up
+> [!WARNING]
+> This library only solves the mathematical kinematics problem, it does not check that the robot
+> can reach poses without self-collision!
+
+---
+
+This implementation was intended to be fast.  On an AMD Ryzen 7 PRO 8840U (a mid-level mobile 
+processor from 2024) the `criterion` benchmark takes roughly 13.7 µs per pose for the inverse 
+kinematics and 0.11 µs per pose for the forward kinematics. 
+
+The inverse kinematics method returns all joint configurations for a reachable flange pose, up
 to the sixteen configurations this architecture allows. It requires no seeding, sampling, or
 iteration toward a single answer. The method reduces the problem to the roots of one scalar
 equation whose degree is known in advance, so the count of candidates is fixed before any
@@ -180,12 +190,12 @@ across the round-trip suites the worst pose error of any returned solution is on
 $10^{-12}$ mm. Acceptance is at $10^{-8}$ mm, far above what a valid solution achieves and far
 below what an invalid candidate can reach.
 
-The Rust solver takes roughly 14 µs per pose to return all solutions, measured with `criterion`
+The Rust solver takes roughly 13.7 µs per pose to return all solutions, measured with `criterion`
 over a corpus of 512 random poses on an AMD Ryzen 7 PRO 8840U (single-thread PassMark 3636); run
 `cargo bench` for the figure on your own machine. About a third of that is finding the roots of the
 constraint, and the rest is spread over locating $O_3$, reading off the joints, and the joint
-polish. Picking the solution nearest a reference configuration adds a few percent. The forward
-kinematics costs about 0.11 µs per pose. 
+polish, which uses an analytic Jacobian rather than a numerical one. Picking the solution nearest a
+reference configuration adds a few percent. The forward kinematics costs about 0.11 µs per pose. 
 
 ## What's in This Repository
 
