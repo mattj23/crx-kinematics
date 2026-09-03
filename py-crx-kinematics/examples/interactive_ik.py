@@ -67,6 +67,12 @@ TRANSLATION_STEP = 25.0
 ROTATION_STEP = math.radians(5.0)
 """Radians per key press, before any change with the bracket keys."""
 
+AXIS_COLORS = ("red", "green", "blue")
+"""The color of the target frame's X, Y, and Z axes."""
+
+FRAME_LENGTH = 200.0
+"""The length of each axis of the target frame, in millimeters."""
+
 
 class InteractiveRobot:
     """
@@ -93,6 +99,11 @@ class InteractiveRobot:
         self.scale = 1.0
         self.reachable = True
 
+        # `build` initializes these references when it adds the geometry to the scene.
+        self.link_actors = []
+        self.axis_actors = []
+        self.status_actor = None
+
     # Target and joint updates.
 
     def try_target(self, target: Iso3) -> None:
@@ -113,7 +124,7 @@ class InteractiveRobot:
         if solution is not None:
             self.joints = solution.joints
 
-        self.draw()
+        self.refresh()
 
     def translate(self, dx: float = 0.0, dy: float = 0.0, dz: float = 0.0) -> None:
         """Move the frame along the world axes, in millimeters scaled by the current step size."""
@@ -136,7 +147,7 @@ class InteractiveRobot:
     def rescale(self, factor: float) -> None:
         """Change how far a single key press moves the frame."""
         self.scale = min(max(self.scale * factor, 0.05), 8.0)
-        self.draw()
+        self.refresh()
 
     def reset(self) -> None:
         """Return the arm and the frame to where they started."""
@@ -145,52 +156,75 @@ class InteractiveRobot:
         self.try_target(self.home_target)
 
     # Scene rendering.
+    #
+    # Add the geometry to the scene once in its authored frames. Moving the robot requires only
+    # assigning a new matrix to each actor. VTK applies these matrices during rendering, so Python
+    # does not transform the forty-six thousand vertices or rebuild and upload their buffers.
 
-    def draw(self) -> None:
+    def build(self) -> None:
         """
-        Redraw the arm, the frame, and the status text.
+        Add the robot and the target frame to the scene, then place them.
 
-        Assign a name to every actor so each redraw replaces the previous actor and does not add a
-        duplicate actor to the scene.
+        Call this once. Every later change goes through `refresh`.
         """
         helper = self.plotter.engeom
 
-        for i, link in enumerate(self.meshes.posed(self.robot, self.joints)):
+        self.link_actors = [
             helper.draw_mesh(
                 Mesh3(link.vertices, link.faces),
                 color=LINK_COLORS[i],
                 name=f"link-{i}",
             )
+            for i, link in enumerate(self.meshes.links)
+        ]
 
-        self.draw_frame()
-        self.plotter.add_text(self.status(), position="upper_left", font_size=10, name="status")
-
-    def draw_frame(self, length: float = 200.0) -> None:
-        """
-        Draw the target frame as three axis lines.
-
-        Draw the three lines separately because `draw_coordinate_system` gives every actor in a
-        frame the same name. A named actor replaces the previous actor with that name, which would
-        leave only one axis visible after the first redraw.
-
-        A reachable frame is drawn in the usual axis colors. An unreachable one turns red, which is
-        the signal that the arm has stopped following.
-
-        :param length: the length of each axis line, in millimeters
-        """
-        # The columns of the rotation block are the frame's axis directions in world coordinates,
-        # and the last column is its origin.
-        matrix = self.target.as_numpy()
-        origin = matrix[:3, 3]
-
-        for axis, color in enumerate(("red", "green", "blue")):
-            tip = origin + matrix[:3, axis] * length
-            self.plotter.add_mesh(
-                pyvista.Line(origin, tip),
-                color=color if self.reachable else "red",
-                line_width=4.0,
-                name=f"target-axis-{axis}",
+        # Draw the frame as three axis lines at the origin, then place it with the target matrix in
+        # the same way as the links. Create the axes separately because `draw_coordinate_system`
+        # assigns the same name to every actor in a frame. Each named actor would replace the
+        # previous actor, leaving only one visible axis.
+        origin = numpy.zeros(3)
+        self.axis_actors = []
+        for axis, color in enumerate(AXIS_COLORS):
+            tip = numpy.zeros(3)
+            tip[axis] = FRAME_LENGTH
+            self.axis_actors.append(
+                self.plotter.add_mesh(
+                    pyvista.Line(origin, tip),
+                    color=color,
+                    line_width=4.0,
+                    name=f"target-axis-{axis}",
+                )
             )
+
+        # Create the status actor once and update its text in place during each refresh.
+        self.status_actor = self.plotter.add_text(
+            "", position="upper_left", font_size=10, name="status"
+        )
+
+        self.refresh()
+
+    def refresh(self) -> None:
+        """
+        Move the actors already in the scene onto the current joints and target.
+
+        Each link takes the pose of its corresponding frame, and the frame axes take the target
+        pose. A move updates only the actors' `user_matrix` values.
+        """
+        for actor, pose in zip(self.link_actors, self.meshes.poses(self.robot, self.joints)):
+            actor.user_matrix = pose
+
+        matrix = self.target.as_numpy()
+        for axis, actor in enumerate(self.axis_actors):
+            actor.user_matrix = matrix
+            # A reachable frame keeps its axis colors. An unreachable one turns red, which is the
+            # signal that the arm has stopped following.
+            actor.prop.color = AXIS_COLORS[axis] if self.reachable else "red"
+
+        self.status_actor.set_text("upper_left", self.status())
+
+        # Moving an actor and rewriting text mark the scene as changed without drawing it. This
+        # update adds no geometry to trigger an automatic redraw, so request a render explicitly.
+        self.plotter.render()
 
     def status(self) -> str:
         """The joint values, the step size, and whether the current pose can be reached."""
@@ -253,7 +287,7 @@ def main() -> None:
     # `plotter.engeom` without requiring an import from `engeom.plot`.
     robot = InteractiveRobot(plotter)
     robot.bind_keys()
-    robot.draw()
+    robot.build()
 
     plotter.add_text(HELP, position="lower_left", font_size=9, name="help")
     plotter.show()
