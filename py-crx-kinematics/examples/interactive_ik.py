@@ -24,6 +24,11 @@ Controls, printed again in the window:
     u / o     rotate the frame about its own Z
     [ / ]     halve or double the step size
     r         return to the starting pose
+    Escape    close the window
+
+The example overrides several default VTK key bindings that conflict with these controls. By
+default, `q` and `e` close the window, `w` and `s` change the rendering style, and `r` resets the
+camera. Mouse controls for the camera remain available.
 
 For an unreachable pose, the robot remains in its current configuration and the frame turns red.
 The frame continues to move, allowing the user to return it to a reachable region.
@@ -201,7 +206,18 @@ class InteractiveRobot:
     # Keyboard bindings.
 
     def bind_keys(self) -> None:
-        """Attach the keyboard controls to the plotter."""
+        """
+        Attach the keyboard controls to the plotter.
+
+        VTK assigns default actions to most letter keys. Its `q` and `e` actions close the window,
+        `w` and `s` select wireframe and surface rendering, and `r` resets the camera. These default
+        actions use the interactor's `CharEvent`, while the callbacks below use `KeyPressEvent`.
+        Remove the `CharEvent` observers to disable the conflicting VTK actions while retaining
+        these callbacks. Removing the observers also removes VTK's keyboard command for closing the
+        window, so bind Escape to that action.
+        """
+        self.plotter.iren.interactor.RemoveObservers("CharEvent")
+
         bindings = {
             "w": lambda: self.translate(dx=+TRANSLATION_STEP),
             "s": lambda: self.translate(dx=-TRANSLATION_STEP),
@@ -218,6 +234,7 @@ class InteractiveRobot:
             "bracketright": lambda: self.rescale(2.0),
             "bracketleft": lambda: self.rescale(0.5),
             "r": self.reset,
+            "Escape": self.plotter.close,
         }
         for key, action in bindings.items():
             self.plotter.add_key_event(key, action)
@@ -226,7 +243,7 @@ class InteractiveRobot:
 HELP = """Move the flange target
   w/s  X    a/d  Y    q/e  Z
   i/k  turn X   j/l  turn Y   u/o  turn Z
-  bracket keys  step size    r  reset"""
+  bracket keys  step size    r  reset    Esc  quit"""
 
 
 def main() -> None:
