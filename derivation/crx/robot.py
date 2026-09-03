@@ -1,201 +1,136 @@
-import numpy
-from engeom._plot.pyvista import PyvistaPlotterHelper
-from engeom.geom3 import Mesh, Iso3, Point3
+"""
+A CRX robot with visual meshes for drawing the figures used in the derivation.
+
+This module uses the tested forward model from :mod:`crx.ik_reference` to keep figures consistent
+with calculated solutions. It adds a mesh for each link and supports two plotting forms:
+individual posed meshes for a PyVista scene and a merged mesh for Matplotlib hidden-line drawings.
+
+Meshes are available for the CRX-5iA and CRX-10iA. The inverse kinematics supports the other four
+models, but this module cannot draw them.
+"""
+
+from __future__ import annotations
+
 from pathlib import Path
 
-_mesh_path = Path(__file__).parent / "meshes"
+import numpy
+from engeom.geom3 import Iso3, Mesh3, Point3
 
+from .ik_reference import CrxParams, fk_all
 
-class RobotKinematics:
-    def __init__(self, z1: float, x1: float, x2: float, y1: float):
-        """
+_MESH_PATH = Path(__file__).parent / "meshes"
 
-        :param z1: The height from the J2 axis to the J3 axis
-        :param x1: The length from the J3 axis to the J5 axis
-        :param x2: The length from the J5 axis to the robot flange
-        :param y1: The offset between the J1 and J6 axes
-        """
-        self.z1 = z1
-        self.x1 = x1
-        self.x2 = x2
-        self.y1 = y1
-
-        self.h = numpy.array([
-            [0.0, 0.0, 0.0, -1.0, 0.0, -1.0],
-            [0.0, 1.0, -1.0, 0.0, -1.0, 0.0],
-            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        ])
-
-        self.p = numpy.zeros(shape=(3, 7), dtype=float)
-        self.p[2, 2] = z1
-        self.p[0, 4] = x1
-        self.p[1, 4] = -y1
-        self.p[0, 5] = x2
-
-        self._joint_radians = [0.0] * 6
-        self._frames = None
-        self._actors = []
-
-    @property
-    def frames(self) -> list[Iso3]:
-        if self._frames is None:
-            self._frames = self._calc_frames()
-        return self._frames
-
-    def _calc_frames(self) -> list[Iso3]:
-        f1 = Iso3.from_rotation(self._joint_radians[0], self.h[0, 0], self.h[1, 0], self.h[2, 0])
-        f2 = f1 @ self._frame_link(1)
-        f3 = f2 @ self._frame_link(2)
-        f4 = f3 @ self._frame_link(3)
-        f5 = f4 @ self._frame_link(4)
-        f6 = f5 @ self._frame_link(5) @ fanuc_end()
-
-        return [f1, f2, f3, f4, f5, f6]
-
-    def frame_origin(self, i: int) -> Point3:
-        if i == 3:
-            f = self.frames[3] @ Iso3.from_translation(self.x1, 0, 0)
-        else:
-            f = self.frames[i]
-
-        return f @ Point3(0, 0, 0)
-
-    def _frame_link(self, i: int) -> Iso3:
-        return (Iso3.from_translation(*self.p[:, i].flatten()) @
-                Iso3.from_rotation(self._joint_radians[i], self.h[0, i], self.h[1, i], self.h[2, i]))
-
-    def set_joints(self, degrees: list[float]):
-        if len(degrees) != 6:
-            raise ValueError("Degrees must be a list of 6 elements")
-        self._joint_radians = _joints_to_radians(degrees)
-        self._frames = None
-
-    @staticmethod
-    def crx5ia():
-        return RobotKinematics(410, 430, 145, 130)
-
-    @staticmethod
-    def crx10ia():
-        return RobotKinematics(540, 540, 160, 150)
-
-    @staticmethod
-    def crx10ial():
-        return RobotKinematics(710, 540, 160, 150)
-
-    @staticmethod
-    def crx20ial():
-        return RobotKinematics(710, 540, 160, 150)
-
-    @staticmethod
-    def crx30ia():
-        return RobotKinematics(950, 750, 180, 185)
+_LINK_COLORS = ["gray", "white", "white", "white", "white", "white", "gray"]
+"""One color per mesh: gray for the base and flange, and white for the moving links."""
 
 
 class Robot:
-    def __init__(self, z1: float, x1: float, x2: float, y1: float, prefix: str):
+    """
+    Represent a drawable CRX robot with link geometry, joint configuration, and calculated frames.
+
+    :param params: the four link lengths that identify the model
+    :param prefix: the stem of the mesh filenames, as in ``crx10ia-0.tcmesh`` through
+        ``crx10ia-6.tcmesh``
+    :param joints: the initial joint configuration in FANUC controller degrees
+    """
+
+    def __init__(self, params: CrxParams, prefix: str, joints=(0.0,) * 6):
+        self.params = params
+        self.meshes = [Mesh3.load_tcmesh(_MESH_PATH / f"{prefix}-{i}.tcmesh") for i in range(7)]
+        self._joints = numpy.zeros(6)
+        self._frames: list[Iso3] | None = None
+        self.set_joints(joints)
+
+    @staticmethod
+    def crx5ia(joints=(0.0,) * 6) -> "Robot":
+        return Robot(CrxParams.crx5ia(), "crx5ia", joints)
+
+    @staticmethod
+    def crx10ia(joints=(0.0,) * 6) -> "Robot":
+        return Robot(CrxParams.crx10ia(), "crx10ia", joints)
+
+    @property
+    def joints(self) -> numpy.ndarray:
+        """The current configuration, in FANUC controller degrees."""
+        return self._joints.copy()
+
+    def set_joints(self, degrees) -> None:
         """
+        Set the robot's joint configuration and invalidate its cached frames.
 
-        :param z1: The height from the J2 axis to the J3 axis
-        :param x1: The length from the J3 axis to the J5 axis
-        :param x2: The length from the J5 axis to the robot flange
-        :param y1: The offset between the J1 and J6 axes
+        :param degrees: six joint angles in FANUC controller degrees
+        :raises ValueError: if six angles were not given
         """
-        self.z1 = z1
-        self.x1 = x1
-        self.x2 = x2
-        self.y1 = y1
-
-        self.meshes = [Mesh.load_stl(_mesh_path / f"{prefix}-{i}.stl") for i in range(7)]
-        self.h = numpy.array([
-            [0.0, 0.0, 0.0, -1.0, 0.0, -1.0],
-            [0.0, 1.0, -1.0, 0.0, -1.0, 0.0],
-            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        ])
-
-        self.p = numpy.zeros(shape=(3, 7), dtype=float)
-        self.p[2, 2] = z1
-        self.p[0, 4] = x1
-        self.p[1, 4] = -y1
-        self.p[0, 5] = x2
-
-        self._joint_radians = [0.0] * 6
+        degrees = numpy.asarray(degrees, dtype=float)
+        if degrees.shape != (6,):
+            raise ValueError(f"Expected six joint angles, got {degrees.shape}")
+        self._joints = degrees
         self._frames = None
-        self._actors = []
 
     @property
     def frames(self) -> list[Iso3]:
+        """
+        Return the six kinematic link frames, computed on first use and cached until the joints move.
+
+        The last one is the flange pose and matches what the controller reports.
+        """
         if self._frames is None:
-            self._frames = self._calc_frames()
+            self._frames = [Iso3(m) for m in fk_all(self.params, self._joints)]
         return self._frames
 
-    def _calc_frames(self) -> list[Iso3]:
-        f1 = Iso3.from_rotation(self._joint_radians[0], self.h[0, 0], self.h[1, 0], self.h[2, 0])
-        f2 = f1 @ self._frame_link(1)
-        f3 = f2 @ self._frame_link(2)
-        f4 = f3 @ self._frame_link(3)
-        f5 = f4 @ self._frame_link(4)
-        f6 = f5 @ self._frame_link(5) @ fanuc_end()
+    @property
+    def mesh_poses(self) -> list[Iso3]:
+        """
+        Return the poses for the seven meshes. The stationary base uses the identity isometry, and
+        the remaining six meshes use the corresponding link frames.
+        """
+        return [Iso3.identity()] + self.frames
 
-        return [f1, f2, f3, f4, f5, f6]
+    def frame_origin(self, index: int) -> Point3:
+        """
+        Return origin $O_{index+1}$ in world coordinates.
 
-    def frame_origin(self, i: int) -> Point3:
-        if i == 3:
-            f = self.frames[3] @ Iso3.from_translation(self.x1, 0, 0)
-        else:
-            f = self.frames[i]
+        The fourth frame is the exception: its own origin sits at $O_3$, and $O_4$ is a fixed
+        offset of ``x1`` along that frame's X axis.
 
-        return f @ Point3(0, 0, 0)
+        :param index: 0 through 5, selecting $O_1$ through $O_6$
+        """
+        frame = self.frames[index]
+        if index == 3:
+            frame = frame @ Iso3.from_translation(self.params.x1, 0.0, 0.0)
+        return frame @ Point3(0.0, 0.0, 0.0)
 
-    def _frame_link(self, i: int) -> Iso3:
-        return (Iso3.from_translation(*self.p[:, i].flatten()) @
-                Iso3.from_rotation(self._joint_radians[i], self.h[0, i], self.h[1, i], self.h[2, i]))
+    def posed_meshes(self) -> list[Mesh3]:
+        """Return copies of the link meshes transformed to their current poses."""
+        return [mesh.transform_copy(pose) for mesh, pose in zip(self.meshes, self.mesh_poses)]
 
-    def set_joints(self, degrees: list[float]):
-        if len(degrees) != 6:
-            raise ValueError("Degrees must be a list of 6 elements")
-        self._joint_radians = _joints_to_radians(degrees)
-        self._frames = None
+    def posed_single_mesh(self) -> Mesh3:
+        """
+        Return all posed links merged into one mesh.
 
-    def plot(self, helper: PyvistaPlotterHelper, opacity: float = 0.5):
-        for actor in self._actors:
-            helper.pv.remove_actor(actor)
-        self._actors.clear()
+        Hidden-line drawings require the merged mesh because outlines calculated separately for
+        each link would include seams where links overlap.
+        """
+        merged, *rest = self.posed_meshes()
+        for mesh in rest:
+            merged.append_in_place(mesh)
+        return merged
 
-        colors = ["gray", "white", "white", "white", "white", "white", "gray"]
-        for mesh, c in zip(self.posed_meshes(), colors):
-            actor = helper.mesh(mesh, color=c, opacity=opacity)
-            self._actors.append(actor)
+    def draw(self, helper, opacity: float = 0.5, name: str = "robot"):
+        """
+        Draw the robot into a PyVista scene, one actor per link.
 
-    def posed_meshes(self):
-        result = []
-        frames = [Iso3.identity(), ] + self.frames
-        for frame, mesh in zip(frames, self.meshes):
-            temp = mesh.cloned()
-            temp.transform_by(frame)
-            result.append(temp)
-        return result
+        The method applies each pose at draw time and leaves the source meshes unchanged. Each actor
+        has a name, so calling this method after moving the joints replaces the previous drawing
+        and prevents actors from accumulating.
 
-    def posed_single_mesh(self):
-        meshes = self.posed_meshes()
-        mesh = meshes[0]
-        for m in meshes[1:]:
-            mesh.append(m)
-        return mesh
-
-    @staticmethod
-    def crx5ia():
-        return Robot(410, 430, 145, 130, "crx5ia")
-
-    @staticmethod
-    def crx10ia():
-        return Robot(540, 540, 160, 150, "crx10ia")
-
-
-def _joints_to_radians(joints: list[float]) -> list[float]:
-    radians = [numpy.radians(j) for j in joints]
-    radians[2] += radians[1]
-    return radians
-
-
-def fanuc_end() -> Iso3:
-    return Iso3.from_rotation(-numpy.pi / 2.0, 0, 1, 0) @ Iso3.from_rotation(numpy.pi, 1, 0, 0)
+        :param helper: an ``engeom.plot.pyvista.PlotterHelper``, which a plotter also exposes as
+            its ``engeom`` attribute
+        :param opacity: how transparent to draw the links
+        :param name: the stem of the actor names, so that two robots can share a scene
+        :return: the actors, one per link
+        """
+        return [
+            helper.draw_mesh(mesh, color=color, opacity=opacity, pose=pose, name=f"{name}-{i}")
+            for i, (mesh, pose, color) in enumerate(zip(self.meshes, self.mesh_poses, _LINK_COLORS))
+        ]

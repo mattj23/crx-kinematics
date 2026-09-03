@@ -1,8 +1,17 @@
 */.idea/
 */.venv/
-*/__pycache__/
 */build/
-*/target/
+
+# Match __pycache__ directories at any depth because they also appear inside packages. An editable
+# installation of the derivation project places its metadata directory next to pyproject.toml.
+__pycache__/
+*.egg-info/
+
+# The Cargo workspace is at the repository root, so ignore its root-level target directory.
+/target/
 
 *.pyc
 
+# maturin places the compiled extension next to the Python sources when it installs the binding
+# into a virtual environment without the editable flag.
+*.so

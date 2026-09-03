@@ -1,24 +1,99 @@
-# FANUC CRX Series Inverse Kinematics
+# FANUC CRX Series Kinematics
 
-## Overview and Motivation
-This repository contains the derivation of a general inverse kinematics model for the entire family of FANUC CRX collaborative robots inspired by the paper by Abbes and Poisson[^abbes] titled "Geometric Approach for Inverse Kinematics of the FANUC CRX Collaborative Robot." 
+Forward and inverse kinematics for the FANUC CRX family of collaborative robots, as a Rust crate
+with a Python binary extension module built on it.
 
-This implementation starts with some general observations that Abbes and Poission made about the geometric layout of the CRX family and its inherent constraints.  Like Abbes and Poission, I start at the end effector and work backwards, relying heavily on some of their insights about the relationship between the $O_3$ and $O_4$ points.  However, I quickly depart from their general method and instead perform more preparation steps with geometric primitives before returning to search for a zero-value cross-product. 
+The inverse kinematics method returns *every* joint configuration for a reachable flange pose, up
+to the sixteen configurations this architecture allows. It requires no seeding, sampling, or
+iteration toward a single answer. The method reduces the problem to the roots of one scalar
+equation whose degree is known in advance, so the count of candidates is fixed before any
+arithmetic is done and none can be missed. It is derived in full in
+[docs/LINEAR_METHOD.md](https://github.com/mattj23/crx-kinematics/blob/main/docs/LINEAR_METHOD.md).
 
-Note that while this implementation would not have been possible without the work and insights of Abbes and Poisson, it does not faithfully follow their approach and should not be used to benchmark or evaluate their work.
+The work grew out of an attempt to implement the geometric approach of Abbes and Poisson[^abbes],
+described under [Prior Work](#prior-work-and-its-problems) below. The derivation here starts from
+their observations about the CRX layout and then departs from their method entirely, so it should
+not be used to benchmark or evaluate their work.
 
-The main content of this repository is this README file.  The Python code contains a reference implementation and the scripts used to generate the diagrams.  If you want to _use_ the inverse kinematics models for this family of robots, there will be a Rust language implementation with a Python binary extension module.
+## Using It from Rust
 
-### Issues with Source Material
+The crate depends only on [`nalgebra`](https://nalgebra.org/), and poses are plain
+`nalgebra::Isometry3<f64>` values, so no conversion is needed to use it alongside another library
+built on the same types.
 
-The Abbes and Poission paper provides a geometry-based framework for calculating joint positions for any robot with the CRX layout when given a desired pose at the robot flange. It can handle calculating the up-to-16 different redundant joint configurations which can produce that pose.
+```bash
+cargo add crx-kinematics
+```
 
-Unfortunately, while the Abbes and Poisson approach is intuitive, I was not able to directly make it work.  There are two libraries which I was able to find which described themselves as having implementations of the Abbes and Poission approach, but as of now (April 2026) neither functions exactly as expected:
+```toml
+[dependencies]
+crx-kinematics = "0.1"
+```
 
-- [Fanuc_RMI_API](https://github.com/vertec-io/Fanuc_RMI_API): written in Rust, has a `sim/` module. I attempted to use this first, but `cargo test` showed it as failing two of its own unit tests, one for a multi-result solution, and one related to round-trip tests of the forward and inverse kinematic calcuations.
-- [crx_kinematics](https://github.com/danielcranston/crx_kinematics): this is a ROS2 package written in C++, and has a `robot.cpp` and `robot.hpp` source files that I extracted to test separate from the rest of the ROS2 package.  This seemed to work on simple cases, but failed a round-trip on [known problem case for the CRX-10iA](https://github.com/mattj23/crx-kinematics/issues/1).
+```rust
+use crx_kinematics::Crx;
 
-Separately, I also attempted to use [ik-geo-rust](https://github.com/Verdant-Evolution/ik-geo-rust), but the specific configuration of the CRX family (3 parallel axes, according to the author of the paper it was based on) does not appear to be implemented in the Rust library.
+let robot = Crx::new_10ia();
+
+// Forward: joint angles in controller degrees to a flange pose.
+let target = robot.fk(&[10.0, -80.0, 10.0, 20.0, -20.0, 45.0]);
+
+// Inverse: every configuration that reaches the pose.
+let solutions = robot.ik(&target);
+
+// Select the solution nearest the arm's current position.
+let current = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+if let Some(best) = robot.ik_closest(&target, &current) {
+    println!("{:?}, residual {:.1e}", best.joints, best.residual);
+}
+```
+
+Joint angles are in degrees as the robot controller reports them, including the FANUC convention
+where the J3 value is measured against J2 rather than against the world. `fk_all` returns the pose
+of every frame in the chain, for drawing the arm or attaching geometry to a link.
+
+Each solution carries the pose error it achieved and a `SolutionKind` marking whether it is an
+isolated solution or one representative of a continuum. `Crx::from_params` builds a robot from the
+four link dimensions directly, for a variant not in the table below.
+
+## Using It from Python
+
+The Python package is a thin wrapper around the Rust implementation, so both languages use the same
+kinematics calculations. It requires only `numpy`.
+
+```bash
+pip install crx-kinematics
+```
+
+```python
+import numpy as np
+from crx_kinematics import Crx
+
+robot = Crx.crx10ia()
+
+# Forward: joint angles in controller degrees to a 4x4 flange pose.
+target = robot.fk([10, -80, 10, 20, -20, 45])
+
+# Inverse: every configuration that reaches the pose, as an (n, 6) array.
+solutions = robot.ik(target)
+
+# Select the solution nearest the arm's current position.
+best = robot.ik_closest(target, [0, 0, 0, 0, 0, 0])
+print(np.round(best.joints, 6), best.residual, best.kind)
+```
+
+Poses cross the boundary as 4x4 NumPy arrays. A target may also be any object with an `as_numpy()`
+method returning one. This protocol accepts an [`engeom`](https://github.com/mattj23/engeom) `Iso3`
+without requiring either package to depend on the other:
+
+```python
+from engeom.geom3 import Iso3
+
+solutions = robot.ik(Iso3.from_xyzwpr(600, 0, 700, 180, 0, 0))
+```
+
+`ik` returns joint angles only. `ik_detailed` returns the same solutions with the residual and kind
+attached.
 
 ## The Fanuc CRX Kinematic Layout
 
@@ -31,11 +106,11 @@ With FANUC robots, like most industrial arms, there are multiple joint configura
 
 Consider the following diagram of a CRX-10iA robot, showing the general links and joints. The robot base is fixed, and the robot's internal kinematics set the world origin as the intersection of the $\overrightarrow{J_1}$ and $\overrightarrow{J_2}$ axes, which yields some mathematical niceties.
 
-![CRX-10iA](derivation/images/links_and_joints.png)
+![CRX-10iA](https://raw.githubusercontent.com/mattj23/crx-kinematics/main/docs/images/links_and_joints.png)
 
 The robot's kinematics can be represented with four unique parameters, which are the distances between the robot's kinematic link origins.  The origins are points in the robot's world coordinate system and are labeled $O_1$ through $O_6$. Point $O_1$ is always at $(0, 0, 0)$ regardless of what the joints do, and $O_6$ is at the intersection of $\overrightarrow{J_6}$ and the robot flange. The other origins are located at the intersection of the different axes.
 
-![CRX-10iA](derivation/images/parameters.png)
+![CRX-10iA](https://raw.githubusercontent.com/mattj23/crx-kinematics/main/docs/images/parameters.png)
 
 | Kinematic Parameter          | Model Parameter |
 |------------------------------|-----------------|
@@ -58,119 +133,133 @@ Because the entire CRX family has the same kinematic layout, the difference in m
 > [!NOTE]
 > The CRX-10iA/L and the CRX-20iA/L have the same kinematic parameters; that is not a mistake.
 
---- 
+If any of the above is unfamiliar, or if the relationship between what a FANUC controller calls a
+frame, a position, or an offset and the mathematics underneath it is not obvious, there is a primer
+in [docs/BACKGROUND.md](https://github.com/mattj23/crx-kinematics/blob/main/docs/BACKGROUND.md).
 
-## Background Principles and Primer
+---
 
-> [!NOTE]
-> If you are new to FANUC robotics and/or kinematics, this section has some notes I've compiled over the years to help explain the concepts to other engineers. If you are already familiar with these concepts, this section is likely of no value to you.
+## How the Method Works
 
-This section has a basic treatment of some kinematic principles, specifically trying to bridge the gap between FANUC robot controller concepts and the underlying mathematical ideas needed to work with them.  There is often a slight mismatch in language, or opaqueness in how FANUC thinks about each concept, that can make it hard to figure out what things actually mean and how to use them.
+The summary below is based on the complete derivation and numerical treatment of every degenerate
+case in [docs/LINEAR_METHOD.md](https://github.com/mattj23/crx-kinematics/blob/main/docs/LINEAR_METHOD.md).
 
-If you're an expert with both FANUC arms and kinematics, this section probably won't be useful to you.  If you have a strong background in one but not the other, or no background in either, this might be worth reading.
+**The pose fixes three of the six origins.** $O_6$ is the flange itself, $O_5$ is a fixed offset
+back along the flange axis, and $O_1$ is the world origin that no joint moves. Only $O_3$ and
+$O_4$ remain unknown, and once they are located every joint angle can be read off the chain.
 
-**Note: when FANUC refers to a cartesian "position" of the robot in a program, position register, or live on the robot, they don't mean it the way we typically use that word in engineering or robotics.  Rather than just a set of $x, y, z$ coordinates, they mean a full 6-DOF specification of both location and orientation. This can be confusing for people new to FANUC. When I use the word "position" in this document, I will typically be using it the way that FANUC uses it in sections referencing FANUC concepts, using the word "location" instead to refer to $x, y, z$ coordinates only. When discussing kinematics in later sections, I will try to substitute "position" with the less ambiguous "pose", but it will still mean location + orientation.**
+**One parameter represents the remaining problem.** $O_4$ must lie on a circle of radius `y1` around
+$O_5$ in the flange plane, so a single angle $\theta$ on that circle describes it.
 
-### Frames, Positions, Offsets, and Isometries
+**With $\theta$ fixed, three of the five constraints are linear in $O_3$.** Cramer's rule solves
+them, and imposing the one remaining constraint leaves a single scalar equation $f(\theta) = 0$.
+There is no circle-to-circle matching, no tracking of branch pairs, and no search.
 
-When working with FANUC industrial robots, there are several concepts that show up repeatedly:
+**The degree of that equation is known.** $f$ is a trigonometric polynomial of degree exactly four,
+which is verified numerically for every model in the family. It therefore has at most eight roots
+in a turn, and each root gives an arm posture reachable two ways, because swinging the base half a
+turn and mirroring the shoulder, elbow, and wrist leaves the flange where it was. Eight roots and
+two postures each give the literature's bound of sixteen.
 
-- Frames, which have two types:
-    - User Frames, which typically are used to define local work offsets to make setup and programming easier. 
-    - Tool Frames, which define a Tool Center Point (TCP), the point of interest which the robot controls during linear and arc moves and which is linked to stored positions.
-- The world coordinate system, usually User Frame 0, which is the default coordinate system the robot references when moving to and displaying positions, and can be thought of as the global origin for the robot sitting at the intersection of the J1 and J2 axes with $\vec{z}$ pointing up and $\vec{x}$ pointing forward.
-- Positions, stored both locally in programs and in the global position registers, which represent a desired location and orientation for the Tool Center Point in relation to a User Frame or the world coordinate system.
-- Offsets, typically used to add fine adjustments to a position.
+**The roots come from an ordinary polynomial solve.** Because the degree is known, sixteen samples
+of $f$ recover its Fourier coefficients exactly. A half-angle substitution turns it into a real
+polynomial of degree eight, whose roots are the eigenvalues of an 8x8 companion matrix. The method
+uses neither bracketing nor root sampling, so it cannot lose a root between samples.
 
-_All of these concepts are mathematically the_ exact _same thing._
+**Every candidate is finished in joint space.** A few Gauss-Newton steps against the target pose
+take each solution to the last digits of double precision. The resulting pose error provides the
+acceptance criterion and permits broad candidate generation. Rejecting an invalid candidate costs a
+few Gauss-Newton steps, while an omitted candidate cannot be recovered later.
 
-Tool frames, user frames, positions, position registers, offsets, and the world coordinate system are each, under the hood, a rigid-body transformation...also known as an _isometry_, a Euclidean transformation, or an Euclidean isometry.  
+## Degenerate Configurations, and Issue #1
 
-For anyone familiar with linear algebra or computational geometry, _isometries_ are a special class of transformation which preserve distance: every pair of points in the original space has the same distance between them after being transformed. This excludes any scaling and shearing, and for the purposes of working with robots in the real world it also excludes reflection of any sort.  Instead, an _isometry_ is...at most...a rotation followed by a translation.
+Several configurations invalidate one or more steps in the reduction above. All are ordinary poses
+that a real robot can be driven to; they are degenerate only in the mathematical sense. They are
+enumerated, with their treatment, in
+[the derivation](https://github.com/mattj23/crx-kinematics/blob/main/docs/LINEAR_METHOD.md#degenerate-configurations).
 
-Because an _isometry_ can completely describe any arbitrary change in location and orientation, they are perfect for representing coordinate systems, poses ($x, y, z$ location + orientation) in space for objects and/or the robot's TCP, and adjustments made to positions or coordinate systems to move or rotate them slightly.
+[Issue #1](https://github.com/mattj23/crx-kinematics/issues/1) documents a pose that the other
+implementations surveyed below fail. On a CRX-10iA at $[10, -80, 10, 20, -20, 45]$, the wrist center
+lands exactly on the J1 axis. Two conditions occur together: the vertical plane used by the
+derivation has no defined orientation, and $O_4$ has no azimuth from which to determine the base
+angle. **This pose is a mathematically degenerate configuration.** It occurs whenever the kinematic
+J3 rotation is a quarter turn from J2, a configuration that an operator can enter directly.
 
-In the R-30iB controller, User Frames, Tool Frames, Positions (`CARTESIAN`, not `JOINT`), and offsets will all be stored in the same way: as a set of six numbers consisting of an X, Y, Z for translation and a W, P, R for rotations.  If you aren't familiar with this notation, it will be covered in the [XYZWPR](#xyzwpr-representation-of-isometries) section.
+The solver detects it by distance and handles it with a separate construction, which returns all
+sixteen solutions for that pose, including the joint values it was built from. Because a pose that
+*misses* the axis by a nanometer is just as hard as one that hits it, the same construction handles
+near misses, and the joint polish absorbs the ignored nanometer.
 
-Though they are stored the same way and are mathematically identical, frames/positions/etc are conceptually different in how they are used/consumed by the robot controller.
+The method cannot recover two configurations documented under
+[Unrecoverable configurations](https://github.com/mattj23/crx-kinematics/blob/main/docs/LINEAR_METHOD.md#unrecoverable-configurations).
+For both configurations, the solver returns solutions that reach the requested pose without
+recovering the configuration that produced it. Both place the wrist center inside the robot's base
+casting, so a real arm cannot reach them.
 
-- User Frames are isometries applied to the world coordinate system (the robot origin), setting the reference from which positions will be recorded or the current cartesian position of the TCP will be displayed.  When adjusted, every position referencing them will move in the physical world without having to be updated.
-- Tool Frames are isometries applied to the end of the robot flange, moving the $x, y, z$ location of the Tool Center Point and adjusting the orientation of the tool's cardinal axes.
-- Positions are _recorded_ by extracting and saving the isometry between the active User Frame isometry and the isometry describing the current location and orientation of the TCP. When the robot is instructed to _move to_ a position, its isometry is applied to the User Frame and the robot will work out where to move the joints so that the TCP matches with the result.
-- Offsets are usually small adjustments that can be applied to a destination position in a program, typically to "touch up" an important location without modifying the original position or position register.  The isometry of the offset is applied to the position being adjusted before the robot is instructed to move to it.
+## Accuracy and Speed
 
-There is one last isometry that is always changing and is usually only referenced indirectly. It is the kinematic isometry: the transformation that describes relationship between the world origin and the location + orientation of the robot flange.  The kinematic isometry is a function of the six joint angles, and every unique combination of joint angles has exactly one isometry associated with it, which can be computed by calculating the forward kinematics of the robot.  However, this isometry is not necessarily unique to the joint angles, and in most cases there are at least two different sets of joint angles which can achieve an isometry within the robot reach.
+Solutions are polished until they stop improving, which puts them at the floor of double precision:
+across the round-trip suites the worst pose error of any returned solution is on the order of
+$10^{-12}$ mm. Acceptance is at $10^{-8}$ mm, far above what a valid solution achieves and far
+below what an invalid candidate can reach.
 
-- The kinematic isometry is what you see on the controller's Teach Pendant when watch the robot's current position in world cartesian mode with an empty Tool Frame.
-- _Forward_ kinematics is the process of taking the six joint angles and computing the kinematic isometry.
-- _Inverse_ kinematics is the process of taking a desired kinematic isometry and back-calculating the different combinations of joint angles which could achieve it.
+The Rust solver takes roughly 0.25 ms per pose to return all solutions, measured with `criterion`
+over a corpus of random poses; run `cargo bench` for the figure on your own machine. The joint
+polish dominates, with everything up to the candidate angles accounting for under a tenth of it.
+The NumPy reference in `derivation/` takes about 80 ms per pose and prioritizes readability and
+comparison over speed.
 
-### Mathematical Use of Isometries
+## What's in This Repository
 
-In three-dimensional space $\mathbb{R^3}$ isometries can be stored in 4x4 matrices, allowing them to be composed together by multiplication or inverted to reverse their effects.  When working directly on a FANUC controller, such as the R-30iB Mini Plus used by the smaller CRX models, the controller has its own kinematics model and will be multiplying isometries together internally, and you will never see them.  
+| Path | What it is |
+|---|---|
+| `crx-kinematics/` | The Rust library. Depends only on `nalgebra`. |
+| `py-crx-kinematics/` | The PyO3 binding and the Python package. |
+| `docs/LINEAR_METHOD.md` | The complete derivation and definitive description of the method. |
+| `docs/ALTERNATE.md` | An earlier, superseded derivation, kept for reference. |
+| `docs/BACKGROUND.md` | A primer on FANUC controller concepts and the isometries beneath them, for readers new to either. |
+| `derivation/` | A development-only, unpublished Python project containing the NumPy reference solver, its tests, and the tooling that draws the robot. |
 
-When trying to construct an external kinematics model yourself, or trying to simulate the robot's behavior in your programming language of choice, you will need to be able to work directly with isometries using at least the following operations:
+The Rust test suites are pose stress tests and should be run in release: `cargo test -r`. They
+include a fixture comparison that checks the Rust roots against roots exported from the NumPy
+reference, so each implementation is checked against the other.
 
-1. Multiply isometries together to create a new isometry
-2. Generate valid isometries from pure rotations and pure translations
-3. Invert an isometry (find the isometry that when multiplied by the original creates the identity isometry)
-4. Convert to and from FANUC's XYZWPR representation
+To build from a clone rather than installing the published packages, `cargo build -r` covers the
+Rust side, and the Python package is built and installed into the active virtual environment with
+[maturin](https://www.maturin.rs/):
 
-Different programming languages have different libraries which can be used. I have used all of the following, but there are many options across many languages:
+```bash
+pip install maturin
+maturin develop -r -m py-crx-kinematics/Cargo.toml
+```
 
-- Python: `scipy.spatial` has some transformation primitives, or `numpy` can be used by working directly with 4x4 matrices
-- C++: the `eigen` library has both non-matrix abstract transforms (quaternions, translations, etc) and the matrix-based `Transform` class
-- C#: the `Mathnet.Spatial` library has the `CoordinateSystem` class, which uses an underlying matrix representation
-- Rust: the `nalgebra` library has a generic `Isometry<...>` struct, which can be used with `f32` or `f64` numbers and in three dimensions uses a unit quaternion to represent rotation.
+## License
 
-#### Simplified Concepts
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option. Unless you explicitly state otherwise, any contribution
+intentionally submitted for inclusion in this work, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.
 
-If you are familiar with using isometries or transformation matrices you can skip this section.
+## Prior Work and Its Problems
 
-If you are unfamiliar, consider the following simplified model: an isometry is the 6-DOF analogue to a 3D vector.
+The Abbes and Poisson paper provides a geometry-based framework for calculating joint positions for
+any robot with the CRX layout from a desired flange pose. It can calculate up to 16 redundant joint
+configurations that produce the pose.
 
-- You can use them to represent both a place in space (a point), or a modification to a place in space (a translation vector).
-- You can both combine them and find the difference between them.
-- You can negate them so that they point in the other direction. If you combine one with its negation you get something representing zero.
-- You can build them out of individual, lower DOF components.
+Although the Abbes and Poisson approach is intuitive, I was unable to make a direct implementation
+work. I found two libraries that described themselves as implementations of this approach. As of
+April 2026, both had functional problems:
 
-If you have a set of isometries composed entirely of translations, without any rotations, they will work identically to 3D vectors.
-Where the analogy falls apart is commutativity; the rotation component means that the order matters.
+- [Fanuc_RMI_API](https://github.com/vertec-io/Fanuc_RMI_API) is written in Rust and contains a
+  `sim/` module. I tried this library first, but `cargo test` failed two of its unit tests: one for a
+  solution with multiple results and one for round-trip forward and inverse kinematics.
+- [crx_kinematics](https://github.com/danielcranston/crx_kinematics) is a ROS 2 package written in
+  C++. I extracted `robot.cpp` and `robot.hpp` to test them separately from the rest of the package.
+  The extracted code worked for simple cases but failed a round trip for a
+  [known CRX-10iA problem case](https://github.com/mattj23/crx-kinematics/issues/1).
 
-| Vector Operation              | Isometry Operation                      | Description                                                        |
-|-------------------------------|-----------------------------------------|--------------------------------------------------------------------|
-| $\vec{c} = \vec{a} + \vec{b}$ | $C = B \times A$                        | Take $a$ and move it by $b$ to create $c$                          |
-| $-1 \cdot \vec{a}$            | $A^{-1}$                                | Invert/negate $a$                                                  |
-| $0 = \vec{a} - \vec{a}$       | $I = A \times A^{-1} = A^{-1} \times A$ | Combining $a$ with its negative/inverse produces a neutral value   |
-| $\vec{c} = \vec{a} - \vec{b}$ | $C = B^{-1} \times A$                   | Take $a$ and move it by the negative/inverse of $b$ to create $c$. |
+I also tried [ik-geo-rust](https://github.com/Verdant-Evolution/ik-geo-rust). The Rust library does
+not appear to implement the CRX family's three-parallel-axis configuration, according to the author
+of the paper on which the library is based.
 
-For isometries, there is an isometry called the "identity" isometry that doesn't modify another isometry when multiplied.  In a matrix representation, it's an identity matrix.  It's also the implicit world origin, with the first three columns representing the $\vec{x}$, $\vec{y}$, and $\vec{z}$ unit vectors of the principle cartesian axes and the first three rows of column 3 representing the $t_x$, $t_y$, and $t_z$ translations applied when multiplying by this isometry.
-
-$$
-I = \begin{bmatrix}
-    1 & 0 & 0 & 0 \\
-    0 & 1 & 0 & 0 \\
-    0 & 0 & 1 & 0 \\
-    0 & 0 & 0 & 1 \\
-    \end{bmatrix}
-$$
-
-Conceptually, transforming something by an isometry $T$ is moving it in space so that its current relation to the world origin $I$ is now the exact relationship it has to $T$.  Transformations (as matrix multiplications) are read from right to left. 
-
-The following assignment first takes $A$ as it is in the world origin and moves it so that $B$ is its origin, then takes the product and moves it so that $C$ is the product's origin.  $A$ is moved by $B$, then the result is moved by $C$.
-
-$$
-D = C \times B \times A
-$$
-
-When composing an isometry from a translation and a rotation, the convention is to apply the rotation first, then the translation.
-
-$$
-A = T \times R
-$$
-
-### XYZWPR Representation of Isometries
-
-To represent isometries for frames, positions, and offsets FANUC uses a shortened, mostly-unambiguous representation of an isometry based on Euler angles.  The letters WPR stand for yaW, Pitch, Roll, respectively.  In FANUC's definition, yaw is rotation around the X axis, pitch is around the Y axis, and roll is around the Z axis.  The X, Y, and Z values are in millimeters, and the W, P, R values are in degrees.
-
-[^abbes]: Abbes, Manel, and Gérard Poisson. "Geometric Approach for Inverse Kinematics of the FANUC CRX Collaborative Robot." Robotics 13, no. 6 (June 14, 2024): 91. https://doi.org/10.3390/robotics13060091.
+[^abbes]: Abbes, Manel, and Gérard Poisson. "Geometric Approach for Inverse Kinematics of the FANUC CRX Collaborative Robot." *Robotics* 13, no. 6 (June 14, 2024): 91. The article is open access and is published at https://www.mdpi.com/2218-6581/13/6/91.

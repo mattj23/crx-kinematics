@@ -1,0 +1,38 @@
+[build-system]
+requires = ["maturin>=1.12,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "crx-kinematics"
+description = "Forward and inverse kinematics for the FANUC CRX series of collaborative robots."
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Topic :: Scientific/Engineering",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Manufacturing",
+]
+dynamic = ["version"]
+dependencies = [
+    "numpy"
+]
+
+[project.urls]
+Homepage = "https://github.com/mattj23/crx-kinematics"
+Repository = "https://github.com/mattj23/crx-kinematics"
+Issues = "https://github.com/mattj23/crx-kinematics/issues"
+
+# Tests require pytest. The engeom interoperability test skips itself when engeom is absent, which
+# keeps engeom optional.
+[project.optional-dependencies]
+tests = [
+    "pytest",
+]
+
+[tool.maturin]
+python-source = "python"

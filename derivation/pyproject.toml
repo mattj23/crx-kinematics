@@ -1,0 +1,32 @@
+# This development-only derivation project contains the NumPy inverse-kinematics reference
+# implementation, its tests, and the tools that draw documentation figures. The separately
+# configured `py-crx-kinematics` project builds the published Python package and shares no package
+# contents with this project.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crx-derivation"
+version = "0.1.1"
+description = "Reference implementation and figure tooling for the CRX kinematics derivation."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    # The drawing code requires the engeom 0.5 API, which renamed the plotting helpers and moved
+    # them out of a private module. engeom 0.4 and earlier are incompatible.
+    "engeom>=0.5",
+    "pyvista",
+    "matplotlib",
+    "pytest",
+]
+
+[tool.setuptools]
+packages = ["crx"]
+
+[tool.setuptools.package-data]
+crx = ["meshes/*.tcmesh"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

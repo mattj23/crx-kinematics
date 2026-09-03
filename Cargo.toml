@@ -1,0 +1,10 @@
+[workspace]
+resolver = "3"
+members = ["crx-kinematics", "py-crx-kinematics"]
+
+[workspace.package]
+version = "0.1.1"
+edition = "2024"
+
+[workspace.dependencies]
+nalgebra = "0.34"

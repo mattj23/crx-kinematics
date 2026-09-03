@@ -1,0 +1,36 @@
+[package]
+name = "crx-kinematics"
+description = "Forward and inverse kinematics for the FANUC CRX series of collaborative robots."
+license = "MIT OR Apache-2.0"
+version.workspace = true
+edition.workspace = true
+# The oldest toolchain the crate has been checked against. Edition 2024 sets a floor of 1.85, but
+# 1.87 is the earliest available here, so it is what can honestly be claimed.
+rust-version = "1.87"
+readme = "README.md"
+repository = "https://github.com/mattj23/crx-kinematics"
+documentation = "https://docs.rs/crx-kinematics"
+keywords = ["robotics", "kinematics", "fanuc", "robot", "ik"]
+categories = ["science::robotics", "mathematics"]
+
+[dependencies]
+# nalgebra is deliberately the only dependency because it provides the isometries, points, and
+# vectors needed for the library's arithmetic.
+nalgebra = { workspace = true }
+
+
+[lib]
+# Disable the library's unit-test benchmark because its harness rejects Criterion's arguments.
+bench = false
+
+[dev-dependencies]
+criterion = "0.7.0"
+approx = "0.5.1"
+rand = "0.10.0"
+# serde and serde_json are used only to read test fixtures.
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+
+[[bench]]
+name = "solver_stages"
+harness = false

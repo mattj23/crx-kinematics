@@ -1,0 +1,10 @@
+# Normalize line endings when files enter the repository. Git stores detected text files with LF
+# and checks them out with the line endings configured for the platform. This keeps Windows and
+# Linux checkouts of the same commit consistent.
+* text=auto
+
+# Preserve these binary assets without text conversion. Git usually detects them from null bytes
+# near the beginning of each file, but explicit rules avoid relying on that heuristic.
+*.tcmesh binary
+*.png binary
+*.jpg binary
