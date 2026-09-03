@@ -172,30 +172,6 @@ take each solution to the last digits of double precision. The resulting pose er
 acceptance criterion and permits broad candidate generation. Rejecting an invalid candidate costs a
 few Gauss-Newton steps, while an omitted candidate cannot be recovered later.
 
-## Degenerate Configurations, and Issue #1
-
-Several configurations invalidate one or more steps in the reduction above. All are ordinary poses
-that a real robot can be driven to; they are degenerate only in the mathematical sense. They are
-enumerated, with their treatment, in
-[the derivation](https://github.com/mattj23/crx-kinematics/blob/main/docs/LINEAR_METHOD.md#degenerate-configurations).
-
-[Issue #1](https://github.com/mattj23/crx-kinematics/issues/1) documents a pose that the other
-implementations surveyed below fail. On a CRX-10iA at $[10, -80, 10, 20, -20, 45]$, the wrist center
-lands exactly on the J1 axis. Two conditions occur together: the vertical plane used by the
-derivation has no defined orientation, and $O_4$ has no azimuth from which to determine the base
-angle. **This pose is a mathematically degenerate configuration.** It occurs whenever the kinematic
-J3 rotation is a quarter turn from J2, a configuration that an operator can enter directly.
-
-The solver detects it by distance and handles it with a separate construction, which returns all
-sixteen solutions for that pose, including the joint values it was built from. Because a pose that
-*misses* the axis by a nanometer is just as hard as one that hits it, the same construction handles
-near misses, and the joint polish absorbs the ignored nanometer.
-
-The method cannot recover two configurations documented under
-[Unrecoverable configurations](https://github.com/mattj23/crx-kinematics/blob/main/docs/LINEAR_METHOD.md#unrecoverable-configurations).
-For both configurations, the solver returns solutions that reach the requested pose without
-recovering the configuration that produced it. Both place the wrist center inside the robot's base
-casting, so a real arm cannot reach them.
 
 ## Accuracy and Speed
 
@@ -268,14 +244,19 @@ of the paper on which the library is based.
 
 ## Known Issues
 
-**The solver can miss configurations near the J1 axis.** The solver treats $O_4$ as on the J1 axis
-when it is within `AXIS_TOL`, a millionth of $z_1$, and uses the separate construction described
-above. Just outside that band, from about $10^{-5}$ to $10^{-4}$ degrees of J3 away from an exact
-crossing, corresponding to a few micrometers of $O_4$, the ordinary method becomes unreliable. Up
-to four roots of the constraint cluster together in this region and can be located only to about
+### Missed configurations near the J1 Axis
+
+The solver treats $O_4$ as on the J1 axis when it is within `AXIS_TOL`, a millionth of $z_1$, 
+and it uses the separate construction described above. Just outside that band, from about 
+$10^{-5}$ to $10^{-4}$ degrees of J3 away from an exact crossing, corresponding to a few micrometers 
+of $O_4$, the ordinary method becomes unreliable. 
+
+Up to four roots of the constraint cluster together in this region and can be located only to about
 $10^{-4}$ radians. The residual used to select between the two $O_3$ branches varies over a range
 narrower than that accuracy, so rounding determines whether branch polishing reaches the correct
-root. Measurements over five thousand poses per model at each offset show that the solver fails to
+root. 
+
+Measurements over five thousand poses per model at each offset show that the solver fails to
 return the generating configuration for one to two percent of all poses and less than one percent
 of poses that avoid the unrecoverable configurations. Every returned solution still reaches the
 pose. Widening `AXIS_TOL` does not resolve these misses because the on-axis construction is exact
@@ -283,28 +264,30 @@ only on the axis, and joint polishing cannot reliably absorb an offset of that s
 `near_axis_rate` example in `crx-kinematics/examples` measures the failure rate and prints the
 missed poses.
 
-**Two configurations are unrecoverable by design.** They are documented under
+### Unrecoverable configurations
+
+The method cannot recover two configurations documented under
 [Unrecoverable configurations](https://github.com/mattj23/crx-kinematics/blob/main/docs/LINEAR_METHOD.md#unrecoverable-configurations).
-Both place the wrist center inside the base casting, so a real arm cannot reach them.
+For both configurations, the solver returns solutions that reach the requested pose without
+recovering the configuration that produced it. Both place the wrist center inside the robot's base
+casting, so a real arm can't reach them.
 
-**A continuum of solutions is reported by one representative.** When a joint has no effect on the
-pose, as when $O_3$ and $O_4$ are both on the J1 axis or when $O_4$ lands on the world origin, the
-solver returns a single solution marked `SingularFamily` in place of the family. The representative
-reaches the pose and can differ from the configuration that produced it. Near such a family, the
-solver can also return ordinary solutions that differ from each other only along the nearly free
-direction. These differences can exceed the controller resolution while remaining below the
-duplicate tolerance of joint polishing.
+### Joint ranges and physical collisions
 
-**Joint values can exceed ranges and physical limits.** Candidates are built with
-J1, J2, J4, J5, and J6 in $[-180, 180)$ degrees and J3 in $(-360, 360)$, because the J2/J3 coupling
-is undone after wrapping, and the joint polish can then carry a value slightly past either end. The
-solver reports every configuration that reaches the pose, including configurations outside the
-joint limits of the physical robot and configurations that pass through the base or the floor. The
-caller must filter solutions against the applicable limits.
+Candidates are built with J1, J2, J4, J5, and J6 in $[-180, 180)$ degrees and J3 in $(-360, 360)$, 
+because the J2/J3 coupling is undone after wrapping, and the joint polish can then carry a value 
+slightly past either end. The solver reports every configuration that reaches the pose, including 
+configurations outside the joint limits of the physical robot and configurations that pass through 
+the base or the floor. For now the caller must filter solutions against the applicable limits.
 
 > [!NOTE]
 > The robot datasheets publish the actual joint limits, and they vary by model.  On the 5iA and the 10iA
 > (which I have on hand) all joints are capable of at least 360 degrees total, while most are over 
 > 380 and J3 is as high as 635 on the 5iA.  This extra angular range isn't returned by this library
-> which, for now, is only returning mathematically unique configurations.  I haven't how...or even
+> which, for now, is only returning mathematically unique configurations.  I haven't decided how...or even
 > _if_...it makes sense to handle the extra range.
+
+Additionally, this library does no collision detection.  Valid joint solutions may produce positions
+where the robot hits itself.  Since the library has no way of knowing where you've put your robot
+and what you might have attached to it, you'll have to do collision detection on the resulting
+solutions to know if they're safe for your setup.
