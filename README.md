@@ -204,11 +204,12 @@ across the round-trip suites the worst pose error of any returned solution is on
 $10^{-12}$ mm. Acceptance is at $10^{-8}$ mm, far above what a valid solution achieves and far
 below what an invalid candidate can reach.
 
-The Rust solver takes roughly 26 µs per pose to return all solutions, measured with `criterion`
-over a corpus of random poses; run `cargo bench` for the figure on your own machine. About forty
-percent of that is finding the roots of the constraint, and the rest is spread evenly over
-locating $O_3$, reading off the joints, and the joint polish. The NumPy reference in `derivation/`
-takes about 80 ms per pose and prioritizes readability and comparison over speed.
+The Rust solver takes roughly 14 µs per pose to return all solutions, measured with `criterion`
+over a corpus of 512 random poses on an AMD Ryzen 7 PRO 8840U (single-thread PassMark 3636); run
+`cargo bench` for the figure on your own machine. About a third of that is finding the roots of the
+constraint, and the rest is spread over locating $O_3$, reading off the joints, and the joint
+polish. Picking the solution nearest a reference configuration adds a few percent. The forward
+kinematics costs about 0.11 µs per pose. 
 
 ## What's in This Repository
 
