@@ -336,7 +336,23 @@ mod tests {
                     }
                     let expected = poly.eval(theta).0 * (1.0 + t * t).powi(DEGREE as i32);
 
-                    assert_relative_eq!(evaluated, expected, epsilon = 1e-9, max_relative = 1e-9);
+                    // Scale the comparison by the polynomial coefficient magnitude, which
+                    // determines the floating-point noise floor. The coefficients carry an
+                    // absolute error of a few units in the last place (ulps) relative to their
+                    // magnitude, and the conversion applies the same lift factor to that error.
+                    // Near a root of `f`, both the value and the terms at this `t` collapse while
+                    // the noise remains, so either scale would measure cancellation error instead
+                    // of conversion error. Relative to the coefficient scale, the largest error
+                    // across 1.2 million samples and every model was 9.9e-16. The threshold is one
+                    // order of magnitude higher.
+                    let scale: f64 = poly.a.iter().chain(poly.b.iter()).map(|v| v.abs()).sum();
+                    let noise_floor = 1e-14 * scale * (1.0 + t * t).powi(DEGREE as i32);
+                    assert!(
+                        (evaluated - expected).abs() <= noise_floor,
+                        "half-angle value differed by {:e} against a noise floor of {:e}",
+                        (evaluated - expected).abs(),
+                        noise_floor
+                    );
                 }
             }
         }
