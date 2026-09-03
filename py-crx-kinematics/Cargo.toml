@@ -17,7 +17,14 @@ crate-type = ["cdylib"]
 # `extension-module` prevents the extension from linking libpython, as required for a wheel, and
 # lets `cargo test` build this crate as part of the workspace. `abi3-py38` matches the
 # `requires-python` minimum in pyproject.toml, so one wheel supports every compatible interpreter.
-pyo3 = { version = "0.28.3", features = ["abi3-py38", "extension-module"] }
+# `generate-import-lib` synthesizes the Python import library for the target architecture, so a
+# Windows wheel can be cross-compiled without an interpreter of that architecture on the runner.
+# The windows-aarch64 wheel is built that way; see the matrix in .github/workflows/wheels.yml.
+pyo3 = { version = "0.28.3", features = [
+    "abi3-py38",
+    "extension-module",
+    "generate-import-lib",
+] }
 numpy = "0.28.0"
 # Import the Rust library as `crx` to distinguish it from this crate's `crx_kinematics` library
 # target, whose name must match the Python module.

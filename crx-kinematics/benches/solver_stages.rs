@@ -71,14 +71,17 @@ fn solver_stages(c: &mut Criterion) {
         })
     });
 
-    group.bench_function(BenchmarkId::new("origin shift and conversion", CORPUS), |b| {
-        b.iter(|| {
-            for poly in &polynomials {
-                let shift = black_box(poly).origin_shift();
-                black_box(poly.shifted(shift).half_angle_polynomial());
-            }
-        })
-    });
+    group.bench_function(
+        BenchmarkId::new("origin shift and conversion", CORPUS),
+        |b| {
+            b.iter(|| {
+                for poly in &polynomials {
+                    let shift = black_box(poly).origin_shift();
+                    black_box(poly.shifted(shift).half_angle_polynomial());
+                }
+            })
+        },
+    );
 
     // Root finding performs and includes the origin shift and polynomial conversion.
     group.bench_function(BenchmarkId::new("root finding", CORPUS), |b| {

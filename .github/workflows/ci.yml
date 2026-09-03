@@ -1,0 +1,148 @@
+name: CI
+
+# Automatic CI on the integration branch, which is where work lands. Feature branches are run on
+# demand instead: Actions > CI > Run workflow, against any branch. Defining `branches` and no `tags`
+# is what keeps tag pushes out of this workflow; those are handled by release.yml.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+# Normalizing to the branch name means a push event and a pull_request event for the same branch
+# share a group, so the duplicate run is cancelled instead of doubling the cost.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: Format and clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Clippy
+        # Clippy runs the full rustc lint set as well, so this also gates ordinary warnings such as
+        # unused imports.
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Release, and not as a preference. These suites sweep thousands of random poses per model
+      # and run the full solver on each: the same run takes about four seconds in release and five
+      # and a half minutes in debug, which is longer than the release build itself.
+      - name: Run tests
+        run: cargo test --workspace --release
+
+  msrv:
+    name: MSRV (1.87)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Verifies the `rust-version` promised by crx-kinematics, which is the only crate here
+      # published to crates.io and so the only one making the promise. Edition 2024 puts the true
+      # floor at 1.85; 1.87 is what has actually been checked, so it is what is declared.
+      - uses: dtolnay/rust-toolchain@1.87.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Check the library
+        run: cargo +1.87.0 check -p crx-kinematics
+      # The dev-dependencies are not part of the promise a consumer relies on, but a contributor on
+      # the minimum toolchain still has to be able to run the tests.
+      - name: Check the tests and benches
+        run: cargo +1.87.0 check -p crx-kinematics --all-targets
+
+  python:
+    name: Python bindings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install maturin
+        run: pip install maturin
+      # Build an actual wheel and test against it, rather than `maturin develop`, so that a
+      # packaging fault (a missing .pyi stub, a bad python-source layout) fails here.
+      - name: Build wheel
+        run: maturin build --out dist -m py-crx-kinematics/Cargo.toml
+      # Installed through the `tests` extra so the test dependencies stay declared once in
+      # pyproject.toml instead of being duplicated here.
+      - name: Install wheel with test dependencies
+        run: pip install "$(ls dist/*.whl)[tests]"
+      # engeom is deliberately not a dependency of this package: the two interoperate through the
+      # `as_numpy()` method and nothing more. It is installed here anyway, because otherwise the
+      # interoperability test skips itself and the one thing it exists to check goes unchecked.
+      - name: Install engeom for the interoperability test
+        run: pip install engeom
+      - name: Verify the optional dependencies are present
+        run: python -c "import numpy, engeom"
+      # Run from the repository root. pytest puts the tests directory on sys.path but not
+      # py-crx-kinematics/python, so `import crx_kinematics` resolves to the installed wheel while
+      # test_stub_drift.py still finds the .pyi file next to the source package. `-rs` reports any
+      # skips, so a silently skipped test is visible in the log.
+      - name: Run tests
+        run: pytest py-crx-kinematics/python/tests/ -q -rs
+
+  derivation:
+    name: NumPy reference and figures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      # The reference solver is what the Rust implementation is checked against, through the
+      # exported fixtures in crx-kinematics/tests/data. A change that broke the reference without
+      # breaking the fixtures would otherwise go unnoticed until someone regenerated them.
+      - name: Install the derivation project
+        run: pip install -e derivation
+      # Also runs the figure tooling, which draws each figure and asserts the geometry it claims to
+      # illustrate. Matplotlib is used headless; no display is needed.
+      - name: Run the reference test suite
+        run: pytest derivation/tests -q
+
+  package:
+    name: crates.io packaging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Catches broken or missing publish metadata now, on a branch, instead of at tag time.
+      - name: Dry-run the publish
+        run: cargo publish -p crx-kinematics --dry-run
+      # A dry run only builds the lib at default features, so it cannot see a test target whose data
+      # was left out of the package. That matters here: the integration tests read recorded
+      # controller data and exported root fixtures from tests/data, and a consumer who received the
+      # crate without them would have a suite that fails on arrival. Build and test the artifact as
+      # one is received. `cargo package` is run explicitly rather than reusing the dry run above: a
+      # dry run leaves only its extracted verify directory behind, not the .crate tarball, and the
+      # tarball is what a consumer actually receives.
+      - name: Test the packaged crate as a consumer receives it
+        run: |
+          set -euo pipefail
+          cargo package -p crx-kinematics
+          rm -rf /tmp/pkgcheck && mkdir -p /tmp/pkgcheck
+          tar xzf target/package/crx-kinematics-*.crate -C /tmp/pkgcheck
+          cd /tmp/pkgcheck/crx-kinematics-*
+          cargo test --release

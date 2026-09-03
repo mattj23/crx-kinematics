@@ -31,7 +31,10 @@ const MERGE_TOL: f64 = 1e-4;
 fn distinct(angles: &[f64]) -> usize {
     let mut kept: Vec<f64> = Vec::new();
     for angle in angles {
-        if !kept.iter().any(|seen| wrap_pi(angle - seen).abs() < MERGE_TOL) {
+        if !kept
+            .iter()
+            .any(|seen| wrap_pi(angle - seen).abs() < MERGE_TOL)
+        {
             kept.push(*angle);
         }
     }

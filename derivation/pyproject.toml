@@ -17,9 +17,16 @@ dependencies = [
     # The drawing code requires the engeom 0.5 API, which renamed the plotting helpers and moved
     # them out of a private module. engeom 0.4 and earlier are incompatible.
     "engeom>=0.5",
-    "pyvista",
     "matplotlib",
     "pytest",
+]
+
+# `Robot.draw` renders into a PyVista scene, but it takes the helper from its caller and this
+# package never imports PyVista itself. Leaving it out of the hard dependencies keeps VTK, which is
+# most of a gigabyte, out of any environment that only runs the tests or draws the figures.
+[project.optional-dependencies]
+pyvista = [
+    "pyvista",
 ]
 
 [tool.setuptools]

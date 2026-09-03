@@ -163,7 +163,11 @@ mod tests {
                 let setup = Setup::new(&robot, &frames[5]);
                 let value = setup.f(true_theta(&setup, &frames));
 
-                assert!(value.abs() < 1e-12, "f was {:e} at a real configuration", value);
+                assert!(
+                    value.abs() < 1e-12,
+                    "f was {:e} at a real configuration",
+                    value
+                );
             }
         }
     }

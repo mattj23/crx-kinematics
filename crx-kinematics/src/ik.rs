@@ -177,10 +177,7 @@ fn candidates(setup: &Setup) -> Vec<Candidate> {
 
     let poly = TrigPoly::from_setup(setup);
     for theta in theta_roots(&poly) {
-        if axis_angles
-            .iter()
-            .any(|a| wrap_pi(theta - a).abs() < 1e-5)
-        {
+        if axis_angles.iter().any(|a| wrap_pi(theta - a).abs() < 1e-5) {
             continue; // already covered by the on-axis construction above
         }
         let (o4, _) = setup.o4_and_axis(theta);

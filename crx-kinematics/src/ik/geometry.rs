@@ -167,7 +167,11 @@ impl Setup<'_> {
         let dq = (b * cos - a * sin) * y1;
         let ddq = (a * cos + b * sin) * -y1;
 
-        (q.norm(), 2.0 * q.dot(&dq), 2.0 * (dq.dot(&dq) + q.dot(&ddq)))
+        (
+            q.norm(),
+            2.0 * q.dot(&dq),
+            2.0 * (dq.dot(&dq) + q.dot(&ddq)),
+        )
     }
 
     /// The angles at which O4 is on the J1 axis, or near enough to be treated as on it.
@@ -332,8 +336,8 @@ pub fn polish_branch(setup: &Setup, mut theta: f64, branch: f64) -> Option<f64> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Crx, Iso3};
     use crate::tests::{all_robots, random_joints};
+    use crate::{Crx, Iso3};
 
     /// Joint values that put O4 exactly on the J1 axis.
     ///
@@ -423,7 +427,10 @@ mod tests {
                 let frames = robot.fk_all(&joints);
                 let setup = Setup::new(&robot, &frames[5]);
                 let (theta, _, o4) = truth(&setup, &frames);
-                assert!(o4.x.hypot(o4.y) < 1e-9, "test setup did not place O4 on the axis");
+                assert!(
+                    o4.x.hypot(o4.y) < 1e-9,
+                    "test setup did not place O4 on the axis"
+                );
 
                 let found = setup.axis_thetas();
                 assert!(!found.is_empty(), "no crossing found");
@@ -448,7 +455,10 @@ mod tests {
                 crossings += Setup::new(&robot, &target).axis_thetas().len();
             }
         }
-        assert_eq!(crossings, 0, "found {crossings} crossings among random poses");
+        assert_eq!(
+            crossings, 0,
+            "found {crossings} crossings among random poses"
+        );
     }
 
     #[test]

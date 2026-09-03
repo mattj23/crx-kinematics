@@ -1,6 +1,6 @@
 //! This module refines solutions against the target pose and identifies duplicate solutions.
 
-use crate::na::{SMatrix, SVector, SVD};
+use crate::na::{SMatrix, SVD, SVector};
 use crate::{Crx, Iso3, wrap_pi};
 
 /// How near a candidate's pose must land, after polishing, to be accepted.

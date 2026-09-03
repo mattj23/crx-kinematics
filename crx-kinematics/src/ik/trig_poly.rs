@@ -248,7 +248,8 @@ mod tests {
                 let theta = random_theta();
                 let step = 1e-6;
 
-                let numeric = (poly.eval(theta + step).0 - poly.eval(theta - step).0) / (2.0 * step);
+                let numeric =
+                    (poly.eval(theta + step).0 - poly.eval(theta - step).0) / (2.0 * step);
                 assert_relative_eq!(poly.eval(theta).1, numeric, epsilon = 1e-6);
             }
         }
@@ -356,7 +357,12 @@ mod tests {
                     largest = largest.max(poly.eval(2.0 * PI * index as f64 / 256.0).0.abs());
                 }
 
-                assert!(at_lost_point > 0.5 * largest, "{:e} vs {:e}", at_lost_point, largest);
+                assert!(
+                    at_lost_point > 0.5 * largest,
+                    "{:e} vs {:e}",
+                    at_lost_point,
+                    largest
+                );
             }
         }
     }

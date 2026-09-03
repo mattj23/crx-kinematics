@@ -173,7 +173,10 @@ where
             .iter()
             .map(|s| joint_distance(&s.joints, &joints))
             .fold(f64::INFINITY, f64::min);
-        assert!(nearest < JOINT_TOL, "{joints:?} not recovered, nearest {nearest:e}");
+        assert!(
+            nearest < JOINT_TOL,
+            "{joints:?} not recovered, nearest {nearest:e}"
+        );
     }
 
     assert!(used > count / 8, "only {used} of {count} draws were usable");
