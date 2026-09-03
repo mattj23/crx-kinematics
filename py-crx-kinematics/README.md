@@ -86,6 +86,12 @@ drawable = [Mesh3(link.vertices, link.faces) for link in meshes.posed(robot, joi
 `LinkMeshes.load` raises `ValueError` for the other four models. `LinkMeshes.is_available` checks
 whether geometry is present without raising an exception.
 
+The `interactive_ik.py` example in
+[examples](https://github.com/mattj23/crx-kinematics/tree/main/py-crx-kinematics/examples) combines
+the meshes with the solver. It draws the robot in a PyVista window and uses the keyboard to move the
+flange target. After every key press, it solves the inverse kinematics and moves the arm. The example
+requires `engeom` and `pyvista` in addition to this package.
+
 ## License
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
