@@ -74,6 +74,23 @@ FRAME_LENGTH = 200.0
 """The length of each axis of the target frame, in millimeters."""
 
 
+def renormalized(pose: Iso3) -> Iso3:
+    """
+    Return a pose reconstructed with a unit quaternion.
+
+    Each key press composes another rotation with the target, and floating-point error accumulates
+    across these operations. Normalize the target quaternion after every move to keep the rotation
+    orthonormal within the solver's tolerance throughout the session. The reconstruction preserves
+    the translation and limits rotational drift to the floating-point precision floor.
+
+    :param pose: the pose to renormalize
+    :return: the same translation and rotation represented by a unit quaternion
+    """
+    x, y, z, i, j, k, w = pose.to_quaternion()
+    norm = math.sqrt(i * i + j * j + k * k + w * w)
+    return Iso3.from_quaternion(x, y, z, i / norm, j / norm, k / norm, w / norm)
+
+
 class InteractiveRobot:
     """
     A robot in a PyVista scene that follows a target frame.
@@ -117,6 +134,9 @@ class InteractiveRobot:
 
         :param target: the pose to ask the flange to reach
         """
+        # Every target update passes through this method, so normalize the rotation here.
+        target = renormalized(target)
+
         self.target = target
         solution = self.robot.ik_closest(target, self.joints)
 
