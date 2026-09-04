@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crx-kinematics", "py-crx-kinematics"]
 
 [workspace.package]
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 
 [workspace.dependencies]
