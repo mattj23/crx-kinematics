@@ -18,7 +18,10 @@ from engeom.geom3 import Iso3, Mesh3, Point3
 
 from .ik_reference import CrxParams, fk_all
 
-_MESH_PATH = Path(__file__).parent / "meshes"
+# The meshes live in the Rust crate, which embeds them with `include_bytes!` and ships them to
+# library users. This project is a development tool installed editable from a checkout, so it reads
+# the same files in place and avoids maintaining a second copy that could diverge.
+_MESH_PATH = Path(__file__).parents[2] / "crx-kinematics" / "meshes"
 
 _LINK_COLORS = ["gray", "white", "white", "white", "white", "white", "gray"]
 """One color per mesh: gray for the base and flange, and white for the moving links."""

@@ -12,7 +12,7 @@ use numpy::{
     AllowTypeChange, IntoPyArray, PyArray1, PyArray2, PyArray3, PyArrayLike1, PyArrayLike2,
     PyArrayMethods, PyUntypedArrayMethods,
 };
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
 
 /// Read a pose from either a 4x4 array or an object that can produce one.
@@ -138,6 +138,49 @@ impl IkSolution {
     }
 }
 
+/// One of the models in the FANUC CRX series.
+///
+/// `LinkMeshes.load` uses the model to select geometry. Two models can share the same four link
+/// dimensions, so those dimensions alone do not identify the model represented by a `Crx`.
+// This enum is accepted as an argument, so it opts in to the `FromPyObject` implementation derived
+// by pyo3. Pyo3 0.28 requires the explicit declaration, and a later release will no longer derive
+// the implementation automatically. `SolutionKind` is not accepted as an argument and does not
+// need this implementation.
+#[pyclass(eq, eq_int, from_py_object, module = "crx_kinematics")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CrxModel {
+    /// The CRX-3iA.
+    Crx3iA,
+
+    /// The CRX-5iA.
+    Crx5iA,
+
+    /// The CRX-10iA.
+    Crx10iA,
+
+    /// The CRX-10iA/L.
+    Crx10iAL,
+
+    /// The CRX-20iA/L.
+    Crx20iAL,
+
+    /// The CRX-30iA.
+    Crx30iA,
+}
+
+impl From<CrxModel> for crx::CrxModel {
+    fn from(model: CrxModel) -> Self {
+        match model {
+            CrxModel::Crx3iA => crx::CrxModel::Crx3iA,
+            CrxModel::Crx5iA => crx::CrxModel::Crx5iA,
+            CrxModel::Crx10iA => crx::CrxModel::Crx10iA,
+            CrxModel::Crx10iAL => crx::CrxModel::Crx10iAL,
+            CrxModel::Crx20iAL => crx::CrxModel::Crx20iAL,
+            CrxModel::Crx30iA => crx::CrxModel::Crx30iA,
+        }
+    }
+}
+
 /// A FANUC CRX robot defined by the four link dimensions that distinguish the models.
 #[pyclass(module = "crx_kinematics")]
 pub struct Crx {
@@ -151,6 +194,14 @@ impl Crx {
     fn from_params(z1: f64, x1: f64, x2: f64, y1: f64) -> Self {
         Self {
             inner: crx::Crx::from_params(z1, x1, x2, y1),
+        }
+    }
+
+    /// Build a robot with the link dimensions of a FANUC CRX model.
+    #[staticmethod]
+    fn from_model(model: CrxModel) -> Self {
+        Self {
+            inner: crx::Crx::from_model(model.into()),
         }
     }
 
@@ -326,11 +377,188 @@ impl Crx {
     }
 }
 
+/// The visual geometry of one robot link, as arrays a mesh library can consume directly.
+#[pyclass(skip_from_py_object, module = "crx_kinematics")]
+#[derive(Clone)]
+pub struct LinkMesh {
+    inner: crx::LinkMesh,
+}
+
+#[pymethods]
+impl LinkMesh {
+    /// The vertex positions in millimeters, as an (n, 3) array of float64.
+    ///
+    /// The array is a fresh copy on every access, so writing into it does not change the mesh.
+    #[getter]
+    fn vertices<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let rows = self.inner.vertices.len();
+        let flat: Vec<f64> = self.inner.vertices.iter().flatten().copied().collect();
+        let array = Array2::from_shape_vec((rows, 3), flat)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(array.into_pyarray(py))
+    }
+
+    /// The triangles, as an (m, 3) array of uint32 indexing into `vertices`.
+    ///
+    /// The array is a fresh copy on every access, so writing into it does not change the mesh.
+    #[getter]
+    fn faces<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<u32>>> {
+        let rows = self.inner.faces.len();
+        let flat: Vec<u32> = self.inner.faces.iter().flatten().copied().collect();
+        let array = Array2::from_shape_vec((rows, 3), flat)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(array.into_pyarray(py))
+    }
+
+    /// The number of vertices in the mesh.
+    #[getter]
+    fn vertex_count(&self) -> usize {
+        self.inner.vertices.len()
+    }
+
+    /// The number of triangles in the mesh.
+    #[getter]
+    fn face_count(&self) -> usize {
+        self.inner.faces.len()
+    }
+
+    /// Return a copy of this mesh with every vertex moved by a transformation.
+    ///
+    /// The transformation may be a 4x4 array or any object with an `as_numpy()` method returning
+    /// one, which is the same input `ik` accepts for a target.
+    fn transformed(&self, transform: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let pose = iso_from_any(transform)?;
+        Ok(Self {
+            inner: self.inner.transformed(&pose),
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "LinkMesh(vertices={}, faces={})",
+            self.inner.vertices.len(),
+            self.inner.faces.len()
+        )
+    }
+}
+
+/// The seven meshes that draw one robot: the stationary base and the six moving links.
+///
+/// Index 0 is the base and index `i` is the link that moves with frame `i - 1` of `fk_all`. The
+/// last one is the flange, whose mating face lies on the z = 0 plane of the pose `fk` reports.
+/// Coordinates are in millimeters.
+///
+/// Geometry is embedded for the CRX-5iA and the CRX-10iA only.
+#[pyclass(skip_from_py_object, module = "crx_kinematics")]
+pub struct LinkMeshes {
+    inner: crx::LinkMeshes,
+}
+
+#[pymethods]
+impl LinkMeshes {
+    /// Decode the seven meshes for a model.
+    ///
+    /// :param model: the model whose geometry to load, which must be `CrxModel.Crx5iA` or
+    ///     `CrxModel.Crx10iA`
+    /// :raises ValueError: if no geometry is embedded for the model
+    #[staticmethod]
+    fn load(model: CrxModel) -> PyResult<Self> {
+        crx::LinkMeshes::load(model.into())
+            .map(|inner| Self { inner })
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    /// Report whether geometry is embedded for a model without raising an exception.
+    #[staticmethod]
+    fn is_available(model: CrxModel) -> bool {
+        crx::LinkMeshes::is_available(model.into())
+    }
+
+    /// The seven meshes in their authored frames, as a list.
+    #[getter]
+    fn links(&self) -> Vec<LinkMesh> {
+        self.inner
+            .links()
+            .iter()
+            .map(|inner| LinkMesh {
+                inner: inner.clone(),
+            })
+            .collect()
+    }
+
+    fn __len__(&self) -> usize {
+        crx::meshes::LINK_COUNT
+    }
+
+    fn __getitem__(&self, index: usize) -> PyResult<LinkMesh> {
+        self.inner
+            .links()
+            .get(index)
+            .map(|inner| LinkMesh {
+                inner: inner.clone(),
+            })
+            .ok_or_else(|| PyIndexError::new_err("index out of range"))
+    }
+
+    /// The pose of each of the seven meshes for a joint configuration, as a (7, 4, 4) array.
+    ///
+    /// The first is the identity, because the base does not move, and the remaining six are the
+    /// frames from `fk_all` in order.
+    ///
+    /// :param robot: the robot whose kinematics produce the frames
+    /// :param joints: six joint angles in degrees, as they appear in the robot controller
+    fn poses<'py>(
+        &self,
+        py: Python<'py>,
+        robot: PyRef<'_, Crx>,
+        joints: PyArrayLike1<'py, f64, AllowTypeChange>,
+    ) -> PyResult<Bound<'py, PyArray3<f64>>> {
+        let joints = joints_from_any(joints)?;
+        let poses = crx::LinkMeshes::poses(&robot.inner, &joints);
+
+        let mut array = Array3::zeros((crx::meshes::LINK_COUNT, 4, 4));
+        let slice = array.as_slice_mut().expect("array is contiguous");
+        for (i, pose) in poses.iter().enumerate() {
+            iso_into(&mut slice[i * 16..(i + 1) * 16], pose);
+        }
+        Ok(array.into_pyarray(py))
+    }
+
+    /// Copies of the seven meshes, each moved to its pose for a joint configuration.
+    ///
+    /// The robot is a separate argument from the model whose meshes were loaded, so geometry from
+    /// one model can be posed on the kinematics of another. That is an approximation, and the
+    /// caller decides whether it is a reasonable one.
+    ///
+    /// :param robot: the robot whose kinematics produce the frames
+    /// :param joints: six joint angles in degrees, as they appear in the robot controller
+    fn posed(
+        &self,
+        robot: PyRef<'_, Crx>,
+        joints: PyArrayLike1<'_, f64, AllowTypeChange>,
+    ) -> PyResult<Vec<LinkMesh>> {
+        let joints = joints_from_any(joints)?;
+        Ok(self
+            .inner
+            .posed(&robot.inner, &joints)
+            .into_iter()
+            .map(|inner| LinkMesh { inner })
+            .collect())
+    }
+
+    fn __repr__(&self) -> String {
+        format!("LinkMeshes(links={})", crx::meshes::LINK_COUNT)
+    }
+}
+
 /// Forward and inverse kinematics for the FANUC CRX series of collaborative robots.
 #[pymodule]
 fn crx_kinematics(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Crx>()?;
+    m.add_class::<CrxModel>()?;
     m.add_class::<IkSolution>()?;
+    m.add_class::<LinkMesh>()?;
+    m.add_class::<LinkMeshes>()?;
     m.add_class::<SolutionKind>()?;
     Ok(())
 }

@@ -1,5 +1,10 @@
 pub mod ik;
 
+// The embedded link geometry contains approximately 460 KB of binary data and requires a decoder.
+// Callers that need only the kinematics can disable it through this feature.
+#[cfg(feature = "meshes")]
+pub mod meshes;
+
 use crate::na::{Matrix3, Matrix4, Translation, Translation3, UnitQuaternion, try_convert};
 pub use nalgebra as na;
 use std::error::Error;
@@ -31,7 +36,13 @@ pub fn wrap_pi(radians: f64) -> f64 {
     (radians + PI).rem_euclid(2.0 * PI) - PI
 }
 
+#[cfg(feature = "meshes")]
+pub use meshes::{LinkMesh, LinkMeshes};
+
 /// The different models in the FANUC CRX series of collaborative robots.
+///
+/// The derived traits let callers copy and compare model values or use them as hashed lookup keys.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CrxModel {
     Crx3iA,
     Crx5iA,

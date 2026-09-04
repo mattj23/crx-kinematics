@@ -216,10 +216,11 @@ fn candidates(setup: &Setup) -> Vec<Candidate> {
         };
 
         for (index, branch) in [1.0, -1.0].into_iter().enumerate() {
-            if let (Some(own), Some(other)) = (screened[index], screened[1 - index]) {
-                if own > SCREEN_LARGE && other < SCREEN_TINY {
-                    continue;
-                }
+            if let (Some(own), Some(other)) = (screened[index], screened[1 - index])
+                && own > SCREEN_LARGE
+                && other < SCREEN_TINY
+            {
+                continue;
             }
             let refined = polish_branch(setup, theta, branch);
             let residual = refined.and_then(|t| setup.branch_residual(t, branch));

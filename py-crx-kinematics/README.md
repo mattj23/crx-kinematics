@@ -53,6 +53,45 @@ axis, which an operator can enter directly and which defeats other implementatio
 architecture. They are enumerated with their treatment in
 [the derivation](https://github.com/mattj23/crx-kinematics/blob/main/docs/LINEAR_METHOD.md#degenerate-configurations).
 
+## Link Meshes
+
+The package carries visual geometry for the CRX-5iA and the CRX-10iA: seven triangle meshes each,
+covering the stationary base and the six moving links. Vertices are returned as an `(n, 3)` array
+of `float64`, and faces are returned as an `(m, 3)` array of `uint32`. Vertex coordinates are in
+millimeters.
+
+```python
+from crx_kinematics import Crx, CrxModel, LinkMeshes
+
+robot = Crx.crx10ia()
+meshes = LinkMeshes.load(CrxModel.Crx10iA)
+
+for link in meshes.posed(robot, [10, -80, 10, 20, -20, 45]):
+    print(link.vertices.shape, link.faces.shape)
+```
+
+Index 0 contains the stationary base. Index `i` contains the link that moves with frame `i - 1` of
+`fk_all`. The final mesh is the flange, whose mating face lies on the z = 0 plane of the pose
+reported by `fk`.
+
+An `engeom` `Mesh3` accepts these array shapes and data types, so drawing the robot requires no
+conversion:
+
+```python
+from engeom.geom3 import Mesh3
+
+drawable = [Mesh3(link.vertices, link.faces) for link in meshes.posed(robot, joints)]
+```
+
+`LinkMeshes.load` raises `ValueError` for the other four models. `LinkMeshes.is_available` checks
+whether geometry is present without raising an exception.
+
+The `interactive_ik.py` example in
+[examples](https://github.com/mattj23/crx-kinematics/tree/main/py-crx-kinematics/examples) combines
+the meshes with the solver. It draws the robot in a PyVista window and uses the keyboard to move the
+flange target. After every key press, it solves the inverse kinematics and moves the arm. The example
+requires `engeom` and `pyvista` in addition to this package.
+
 ## License
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or

@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy
 import pytest
 
-from crx_kinematics import Crx, IkSolution, SolutionKind
+from crx_kinematics import Crx, CrxModel, IkSolution, LinkMeshes, SolutionKind
 
 _RECORDED_DATA = Path(__file__).parents[3] / "crx-kinematics" / "tests" / "data"
 """
@@ -241,3 +241,138 @@ def test_a_target_which_is_not_a_rigid_transformation_is_rejected(robot: Crx):
 def test_a_joint_vector_of_the_wrong_length_is_rejected(robot: Crx, bad):
     with pytest.raises(ValueError):
         robot.fk(bad)
+
+
+# The link meshes, which are embedded in the library for two of the six models.
+
+MESH_MODELS = [CrxModel.Crx5iA, CrxModel.Crx10iA]
+"""The models with embedded geometry."""
+
+MESHLESS_MODELS = [CrxModel.Crx3iA, CrxModel.Crx10iAL, CrxModel.Crx20iAL, CrxModel.Crx30iA]
+"""The models without embedded geometry."""
+
+
+@pytest.mark.parametrize("model", MESH_MODELS)
+def test_link_meshes_have_the_documented_shapes_and_dtypes(model: CrxModel):
+    """
+    A mesh library reads the two arrays directly, so their data types are part of the interface.
+    For example, `engeom.geom3.Mesh3` rejects face arrays with a signed data type.
+    """
+    meshes = LinkMeshes.load(model)
+    assert LinkMeshes.is_available(model)
+    assert len(meshes) == 7
+    assert len(meshes.links) == 7
+
+    for link in meshes.links:
+        assert link.vertices.dtype == numpy.float64
+        assert link.vertices.ndim == 2 and link.vertices.shape[1] == 3
+        assert link.faces.dtype == numpy.uint32
+        assert link.faces.ndim == 2 and link.faces.shape[1] == 3
+
+        assert link.vertex_count == len(link.vertices)
+        assert link.face_count == len(link.faces)
+        assert link.vertex_count > 0 and link.face_count > 0
+
+        # Every triangle must index a vertex which exists.
+        assert link.faces.max() < link.vertex_count
+
+
+@pytest.mark.parametrize("model", MESHLESS_MODELS)
+def test_a_model_without_geometry_raises(model: CrxModel):
+    assert not LinkMeshes.is_available(model)
+    with pytest.raises(ValueError):
+        LinkMeshes.load(model)
+
+
+def test_the_arrays_are_copies_rather_than_views():
+    """Writing into a returned array must not change the mesh it came from."""
+    link = LinkMeshes.load(CrxModel.Crx5iA).links[0]
+    before = link.vertices.copy()
+
+    scribbled = link.vertices
+    scribbled[:] = 0.0
+
+    assert numpy.array_equal(link.vertices, before)
+
+
+def test_an_index_past_the_last_mesh_is_rejected():
+    meshes = LinkMeshes.load(CrxModel.Crx5iA)
+    assert meshes[6].vertex_count == meshes.links[6].vertex_count
+    with pytest.raises(IndexError):
+        meshes[7]
+
+
+def test_the_poses_are_the_identity_followed_by_the_kinematic_frames():
+    robot = Crx.crx10ia()
+    joints = [10.0, -20.0, 30.0, -40.0, 50.0, -60.0]
+    poses = LinkMeshes.load(CrxModel.Crx10iA).poses(robot, joints)
+
+    assert poses.shape == (7, 4, 4)
+    assert numpy.allclose(poses[0], numpy.eye(4))
+    assert numpy.allclose(poses[1:], robot.fk_all(joints))
+
+
+def test_posed_meshes_follow_the_forward_kinematics():
+    """The flange mesh must move with the pose the controller reports."""
+    robot = Crx.crx10ia()
+    joints = [10.0, -20.0, 30.0, -40.0, 50.0, -60.0]
+    meshes = LinkMeshes.load(CrxModel.Crx10iA)
+    posed = meshes.posed(robot, joints)
+
+    # The base does not move with the joints.
+    assert numpy.allclose(posed[0].vertices, meshes.links[0].vertices)
+
+    flange = robot.fk(joints)
+    expected = meshes.links[6].vertices @ flange[:3, :3].T + flange[:3, 3]
+    assert numpy.allclose(posed[6].vertices, expected, atol=1e-9)
+    assert numpy.array_equal(posed[6].faces, meshes.links[6].faces)
+
+
+def test_a_mesh_transform_accepts_any_object_offering_as_numpy():
+    class Pose:
+        def __init__(self, matrix):
+            self._matrix = matrix
+
+        def as_numpy(self):
+            return self._matrix
+
+    link = LinkMeshes.load(CrxModel.Crx5iA).links[6]
+    transform = Crx.crx5ia().fk([10.0, -20.0, 30.0, -40.0, 50.0, -60.0])
+
+    assert numpy.allclose(
+        link.transformed(Pose(transform)).vertices, link.transformed(transform).vertices
+    )
+
+
+@pytest.mark.parametrize("bad", [[1.0, 2.0, 3.0], [0.0] * 7, []])
+def test_posing_rejects_a_joint_vector_of_the_wrong_length(bad):
+    meshes = LinkMeshes.load(CrxModel.Crx5iA)
+    robot = Crx.crx5ia()
+
+    with pytest.raises(ValueError):
+        meshes.posed(robot, bad)
+    with pytest.raises(ValueError):
+        meshes.poses(robot, bad)
+
+
+@pytest.mark.parametrize(
+    "model,named",
+    [
+        (CrxModel.Crx3iA, Crx.crx3ia),
+        (CrxModel.Crx5iA, Crx.crx5ia),
+        (CrxModel.Crx10iA, Crx.crx10ia),
+        (CrxModel.Crx10iAL, Crx.crx10ial),
+        (CrxModel.Crx20iAL, Crx.crx20ial),
+        (CrxModel.Crx30iA, Crx.crx30ia),
+    ],
+)
+def test_building_a_robot_from_a_model_matches_the_named_constructor(model: CrxModel, named):
+    built = Crx.from_model(model)
+    expected = named()
+
+    assert (built.z1, built.x1, built.x2, built.y1) == (
+        expected.z1,
+        expected.x1,
+        expected.x2,
+        expected.y1,
+    )

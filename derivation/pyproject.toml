@@ -29,11 +29,11 @@ pyvista = [
     "pyvista",
 ]
 
+# There is no package data. The link meshes this project draws with belong to the Rust crate now,
+# and `crx.robot` reads them from `../crx-kinematics/meshes` in the checkout. This path requires an
+# editable installation; a wheel does not contain the mesh data.
 [tool.setuptools]
 packages = ["crx"]
-
-[tool.setuptools.package-data]
-crx = ["meshes/*.tcmesh"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

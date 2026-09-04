@@ -28,4 +28,6 @@ pyo3 = { version = "0.28.3", features = [
 numpy = "0.28.0"
 # Import the Rust library as `crx` to distinguish it from this crate's `crx_kinematics` library
 # target, whose name must match the Python module.
-crx = { package = "crx-kinematics", path = "../crx-kinematics" }
+# The bindings expose the link meshes, so they enable the `meshes` feature explicitly. This remains
+# reliable if the library's default feature set changes.
+crx = { package = "crx-kinematics", path = "../crx-kinematics", features = ["meshes"] }
