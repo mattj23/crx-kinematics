@@ -69,7 +69,7 @@ jobs:
       # Verifies the `rust-version` promised by crx-kinematics, which is the only crate here
       # published to crates.io and so the only one making the promise. Edition 2024 puts the true
       # floor at 1.85, and tol-compress raises it to 1.88, which is what is declared.
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.120.0
       - uses: Swatinem/rust-cache@v2
       - name: Check the library
         run: cargo +1.88.0 check -p crx-kinematics
