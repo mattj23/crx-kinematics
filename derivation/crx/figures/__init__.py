@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import axis_case, branches, f_over_a_turn, free_parameter
+from . import axis_case, branches, f_over_a_turn, free_parameter, issue_one
 from ._common import IMAGE_DIR
 
 FIGURES = {
@@ -17,6 +17,7 @@ FIGURES = {
     "o3_branches": branches.draw,
     "f_over_a_turn": f_over_a_turn.draw,
     "axis_case": axis_case.draw,
+    "issue_one": issue_one.draw,
 }
 """The figure functions, keyed by their output file stems."""
 
